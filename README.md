@@ -2,8 +2,6 @@
 
 Public Windows 11-style desktop for **Arch Linux + Hyprland**: taskbar, flyouts, Agent Centre, SDDM login theme, and optional GRUB theme.
 
-This repo does **not** include the private Finance app. That lives in a separate private repository.
-
 Telegram, Discord, Spotify, Edge, Cursor, and similar apps are also **not** included. The installer only adds what the shell needs, plus Firefox, Kitty, and Nautilus because the keybinds open them.
 
 ---

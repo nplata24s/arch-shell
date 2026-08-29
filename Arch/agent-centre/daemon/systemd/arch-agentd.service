@@ -1,0 +1,12 @@
+[Unit]
+Description=Arch Shell Agent Centre daemon
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.config/arch-shell/agent-daemon/arch_agentd.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

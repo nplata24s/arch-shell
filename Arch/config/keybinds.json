@@ -1,0 +1,29 @@
+{
+  "modifier": "Super",
+  "binds": {
+    "shell.start": { "key": "", "mods": ["Super"], "alone": true, "description": "Toggle Start menu" },
+    "shell.close": { "key": "Escape", "mods": [], "description": "Close popup or Start" },
+    "shell.keybindHelp": { "key": "H", "mods": ["Super", "Shift"], "description": "Keybind cheat sheet" },
+    "desktop.1": { "key": "1", "mods": ["Super"], "description": "Desktop 1" },
+    "desktop.2": { "key": "2", "mods": ["Super"], "description": "Desktop 2" },
+    "desktop.3": { "key": "3", "mods": ["Super"], "description": "Desktop 3" },
+    "desktop.4": { "key": "4", "mods": ["Super"], "description": "Desktop 4" },
+    "desktop.5": { "key": "5", "mods": ["Super"], "description": "Desktop 5" },
+    "desktop.6": { "key": "6", "mods": ["Super"], "description": "Desktop 6" },
+    "desktop.7": { "key": "7", "mods": ["Super"], "description": "Desktop 7" },
+    "desktop.8": { "key": "8", "mods": ["Super"], "description": "Desktop 8" },
+    "desktop.9": { "key": "9", "mods": ["Super"], "description": "Desktop 9" },
+    "window.close": { "key": "X", "mods": ["Super"], "description": "Close window" },
+    "window.toggleFloat": { "key": "F", "mods": ["Super", "Shift"], "description": "Toggle float" },
+    "module.audio": { "key": "A", "mods": ["Super", "Shift"], "description": "Open Audio" },
+    "module.agentCentre": { "key": "A", "mods": ["Super"], "description": "Open Agent Centre" },
+    "module.clipboard": { "key": "V", "mods": ["Super"], "description": "Clipboard history" },
+    "module.notes": { "key": "N", "mods": ["Super"], "description": "Quick notes" },
+    "module.calculator": { "key": "C", "mods": ["Super"], "description": "Calculator" },
+    "module.taskView": { "key": "Tab", "mods": ["Super"], "description": "Task view" },
+    "module.quickSettings": { "key": "A", "mods": ["Super", "Ctrl"], "description": "Quick settings" },
+    "app.terminal": { "key": "Return", "mods": ["Super"], "description": "Open terminal" },
+    "app.screenshot": { "key": "Print", "mods": [], "description": "Screenshot region" },
+    "app.colorPicker": { "key": "C", "mods": ["Super", "Shift"], "description": "Colour picker" }
+  }
+}

@@ -1,0 +1,10 @@
+.cache/
+*.log
+**/.DS_Store
+Arch/sddm/arch-shell/wallpaper.jpg
+Arch/sddm/arch-shell/wallpaper
+Arch/sddm/arch-shell/live-state/
+Arch/grub/arch-shell/
+Arch/config/providers.json
+__pycache__/
+*.pyc

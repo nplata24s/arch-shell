@@ -1,0 +1,26 @@
+# Quickshell / runtime
+.cache/
+*.log
+
+# Python agent daemon
+agent-centre/daemon/__pycache__/
+agent-centre/daemon/.venv/
+*.pyc
+
+# Backups created by install.sh
+backup/
+
+# SDDM copies the live wallpaper here for local greeter tests
+sddm/arch-shell/wallpaper.jpg
+sddm/arch-shell/wallpaper
+sddm/arch-shell/live-state/
+
+# Generated GRUB theme assets (rendered at install from the live wallpaper)
+grub/arch-shell/
+
+# Agent Centre keys — never commit
+config/providers.json
+agent/providers.json
+
+# Editor
+.cursor/

@@ -1,0 +1,2 @@
+# AUR packages. Yay is installed automatically if missing.
+quickshell-git

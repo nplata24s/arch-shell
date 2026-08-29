@@ -23,6 +23,7 @@ Item {
     property var pending: []
     property var providers: ({})
     property var knownProviders: ({})
+    property var providerOrder: ["openai", "anthropic", "google", "copilot"]
     property var rulePresets: [
         "ask-before-commit", "ask-before-shell", "ask-before-network",
         "no-destructive", "stay-in-repo", "report-to-lead"
@@ -34,6 +35,7 @@ Item {
     property string tab: "agents"
     property string busy: ""
     property string error: ""
+    property string actionPendingBody: ""
     property string orgKind: ""
     property string orgId: ""
     // The daemon is a local user service, so bring it up on first open rather
@@ -89,7 +91,40 @@ Item {
         return (p && p.label) ? p.label : name
     }
 
+    function providerIds() {
+        const order = root.providerOrder || []
+        if (order.length)
+            return order
+        const keys = Object.keys(root.knownProviders || {})
+        return keys.length ? keys : ["openai", "anthropic", "google", "copilot"]
+    }
+
+    function providerInfo(name) {
+        return (root.providers && root.providers[name]) ? root.providers[name] : ({})
+    }
+
+    function providerStatusText(name) {
+        const p = root.providerInfo(name)
+        if (p.loginJob && p.loginJob.status === "running")
+            return p.loginJob.message || "Waiting for sign-in…"
+        if (p.loginJob && p.loginJob.status === "error")
+            return p.loginJob.message
+        if (p.mode === "login")
+            return "Signed in" + (p.account ? (" · " + p.account) : "") +
+                   (root.providerActiveModel(name) ? (" · " + root.providerActiveModel(name)) : "")
+        if (p.mode === "local")
+            return "Local · " + (root.providerActiveModel(name) || "auto")
+        if (root.providerConfigured(name))
+            return "API key saved · " + (root.providerActiveModel(name) || "auto")
+        if (p.cli && p.cli.available && p.cli.account)
+            return "Session found · " + p.cli.account + " — click Use existing login"
+        return "Not configured"
+    }
+
     function providerModels(name) {
+        const live = root.providerInfo(name).models
+        if (live && live.length)
+            return live
         const p = knownProviders ? knownProviders[name] : undefined
         return (p && p.fallbacks) ? p.fallbacks : []
     }
@@ -117,7 +152,7 @@ Item {
 
     readonly property var chatProviderIds: {
         const keys = Object.keys(root.knownProviders || {})
-        const all = keys.length ? keys : ["openai", "anthropic", "google"]
+        const all = keys.length ? keys : root.providerIds()
         const configured = all.filter(k => root.providerConfigured(k))
         return configured.length ? configured : all
     }
@@ -185,13 +220,17 @@ Item {
     function post(path, payload) {
         busy = path
         error = ""
-        actionProc.command = ["bash", scriptPath(), "post", path, JSON.stringify(payload)]
+        actionPendingBody = JSON.stringify(payload)
+        actionProc.stdinEnabled = true
+        actionProc.command = ["bash", scriptPath(), "post", path, "-"]
         actionProc.running = true
     }
 
     function service(action) {
         busy = action
         error = ""
+        actionPendingBody = ""
+        actionProc.stdinEnabled = false
         actionProc.command = ["bash", scriptPath(), action]
         actionProc.running = true
     }
@@ -235,6 +274,8 @@ Item {
                     root.pending = d.pending || []
                     root.providers = d.providers || ({})
                     root.knownProviders = d.knownProviders || ({})
+                    if (d.providerOrder && d.providerOrder.length)
+                        root.providerOrder = d.providerOrder
                     if (d.rulePresets && d.rulePresets.length)
                         root.rulePresets = d.rulePresets
                     if (d.dutyPresets && d.dutyPresets.length)
@@ -257,6 +298,7 @@ Item {
 
     Process {
         id: actionProc
+        stdinEnabled: true
         stdout: StdioCollector {
             onStreamFinished: {
                 root.busy = ""
@@ -271,6 +313,13 @@ Item {
                         root.error = "Could not reach the agent service."
                 } catch (e) { }
                 root.refresh()
+            }
+        }
+        onStarted: {
+            if (root.actionPendingBody !== "") {
+                write(root.actionPendingBody)
+                root.actionPendingBody = ""
+                stdinEnabled = false
             }
         }
     }
@@ -462,59 +511,95 @@ Item {
 
             delegate: FCard {
                 required property var modelData
+                readonly property bool needsSudo: !!(modelData.needsSudo)
+                readonly property bool sudoNeedsPassword: needsSudo
+                    && modelData.elevation !== "pkexec"
+                    && modelData.sudoNeedsPassword !== false
                 Layout.fillWidth: true
-                Layout.preferredHeight: 62
+                implicitHeight: permCol.implicitHeight + 20
                 color: ArchTheme.accentMuted
                 border.color: ArchTheme.accentLine
 
-                RowLayout {
-                    anchors.fill: parent
+                ColumnLayout {
+                    id: permCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.leftMargin: 12
                     anchors.rightMargin: 10
-                    spacing: 10
+                    anchors.topMargin: 10
+                    spacing: 8
 
-                    Text {
-                        text: Icons.bell
-                        font.family: ArchTheme.fontFamily
-                        font.pixelSize: 15
-                        color: ArchTheme.accent
-                    }
-                    ColumnLayout {
+                    RowLayout {
                         Layout.fillWidth: true
-                        spacing: 0
+                        spacing: 10
+
                         Text {
-                            Layout.fillWidth: true
-                            text: modelData.agent + " " + modelData.what
+                            text: Icons.bell
                             font.family: ArchTheme.fontFamily
-                            font.pixelSize: ArchTheme.sizeSmall
-                            color: ArchTheme.textPrimary
-                            elide: Text.ElideRight
+                            font.pixelSize: 15
+                            color: ArchTheme.accent
                         }
-                        Text {
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            text: modelData.status === "awaiting-agent"
-                                ? "Awaiting " + (modelData.approverName || "lead")
-                                  + " — you can still override"
-                                : "Awaiting you"
-                            font.family: ArchTheme.fontFamily
-                            font.pixelSize: ArchTheme.sizeCaption
-                            color: ArchTheme.textTertiary
-                            elide: Text.ElideRight
+                            spacing: 0
+                            Text {
+                                Layout.fillWidth: true
+                                text: modelData.agent + " " + modelData.what
+                                font.family: ArchTheme.fontFamily
+                                font.pixelSize: ArchTheme.sizeSmall
+                                color: ArchTheme.textPrimary
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: needsSudo
+                                    ? (sudoNeedsPassword
+                                        ? "Needs root — type your sudo password. Used once, not saved."
+                                        : (modelData.elevation === "pkexec"
+                                            ? "Needs root — approve, then complete the desktop prompt."
+                                            : "Needs root — approve to run with your current sudo session."))
+                                    : (modelData.status === "awaiting-agent"
+                                        ? "Awaiting " + (modelData.approverName || "lead")
+                                          + " — you can still override"
+                                        : "Awaiting you")
+                                font.family: ArchTheme.fontFamily
+                                font.pixelSize: ArchTheme.sizeCaption
+                                color: ArchTheme.textTertiary
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+                        FBtn {
+                            text: "Approve"
+                            implicitHeight: 26
+                            highlighted: true
+                            onClicked: {
+                                const body = { id: modelData.id, approve: true }
+                                if (sudoField.visible && sudoField.text !== "")
+                                    body.sudoPassword = sudoField.text
+                                sudoField.text = ""
+                                root.post("/permissions/resolve", body)
+                            }
+                        }
+                        FBtn {
+                            text: "Deny"
+                            implicitHeight: 26
+                            danger: true
+                            onClicked: {
+                                sudoField.text = ""
+                                root.post("/permissions/resolve",
+                                          { id: modelData.id, approve: false })
+                            }
                         }
                     }
-                    FBtn {
-                        text: "Approve"
-                        implicitHeight: 26
-                        highlighted: true
-                        onClicked: root.post("/permissions/resolve",
-                                             { id: modelData.id, approve: true })
-                    }
-                    FBtn {
-                        text: "Deny"
-                        implicitHeight: 26
-                        danger: true
-                        onClicked: root.post("/permissions/resolve",
-                                             { id: modelData.id, approve: false })
+
+                    FField {
+                        id: sudoField
+                        visible: sudoNeedsPassword
+                        Layout.fillWidth: true
+                        echoMode: TextInput.Password
+                        placeholderText: "sudo password"
+                        font.pixelSize: ArchTheme.sizeCaption
                     }
                 }
             }
@@ -896,9 +981,7 @@ Item {
                         FCombo {
                             id: agentProvider
                             Layout.fillWidth: true
-                            model: Object.keys(root.knownProviders).length > 0
-                                ? Object.keys(root.knownProviders)
-                                : ["openai", "anthropic", "google"]
+                            model: root.providerIds()
                         }
                         FCombo {
                             id: agentRank
@@ -1480,79 +1563,161 @@ Item {
             Text {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "API keys are stored in ~/.config/arch-shell/agent/providers.json "
-                      + "with owner-only permissions and never leave your machine."
+                text: "Keys and sign-in sessions stay in ~/.config/arch-shell/agent/providers.json "
+                      + "(owner-only). Sign in uses that vendor's official app so Google AI Pro, "
+                      + "ChatGPT, Claude, and Copilot plans apply."
                 font.family: ArchTheme.fontFamily
                 font.pixelSize: ArchTheme.sizeCaption
                 color: ArchTheme.textTertiary
             }
 
-            Repeater {
-                model: Object.keys(root.knownProviders).length > 0
-                    ? Object.keys(root.knownProviders)
-                    : ["openai", "anthropic", "google"]
+            Flickable {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentHeight: providerCol.implicitHeight
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: FScroll { }
 
-                delegate: FCard {
-                    required property string modelData
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 56
+                ColumnLayout {
+                    id: providerCol
+                    width: parent.width
+                    spacing: 8
 
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 10
-                        spacing: 8
+                    Repeater {
+                        model: root.providerIds()
 
-                        ColumnLayout {
-                            Layout.preferredWidth: 110
-                            spacing: 0
-                            Text {
-                                text: root.providerLabel(modelData)
-                                font.family: ArchTheme.fontFamily
-                                font.pixelSize: ArchTheme.sizeSmall
-                                font.weight: Font.DemiBold
-                                color: ArchTheme.textPrimary
-                            }
-                            Text {
-                                text: root.providerConfigured(modelData)
-                                    ? ("Key saved · " + (root.providerActiveModel(modelData) || "auto"))
-                                    : "Not configured"
-                                font.family: ArchTheme.fontFamily
-                                font.pixelSize: ArchTheme.sizeCaption
-                                color: root.providerConfigured(modelData)
-                                    ? ArchTheme.success : ArchTheme.textTertiary
-                            }
-                        }
-
-                        FField {
-                            id: keyField
+                        delegate: FCard {
+                            required property string modelData
                             Layout.fillWidth: true
-                            placeholderText: "Paste API key"
-                            echoMode: TextInput.Password
-                            font.pixelSize: ArchTheme.sizeSmall
-                        }
+                            implicitHeight: providerCard.implicitHeight + 20
 
-                        FBtn {
-                            text: "Save"
-                            highlighted: true
-                            enabled: keyField.text.trim() !== ""
-                            onClicked: {
-                                root.post("/providers",
-                                          { name: modelData, key: keyField.text.trim() })
-                                keyField.text = ""
+                            ColumnLayout {
+                                id: providerCard
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: 10
+                                spacing: 8
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Text {
+                                            text: root.providerLabel(modelData)
+                                            font.family: ArchTheme.fontFamily
+                                            font.pixelSize: ArchTheme.sizeSmall
+                                            font.weight: Font.DemiBold
+                                            color: ArchTheme.textPrimary
+                                        }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            wrapMode: Text.WordWrap
+                                            text: root.providerStatusText(modelData)
+                                            font.family: ArchTheme.fontFamily
+                                            font.pixelSize: ArchTheme.sizeCaption
+                                            color: {
+                                                const p = root.providerInfo(modelData)
+                                                if (p.loginJob && p.loginJob.status === "error")
+                                                    return ArchTheme.danger
+                                                if (p.loginJob && p.loginJob.status === "running")
+                                                    return ArchTheme.accent
+                                                return root.providerConfigured(modelData)
+                                                    ? ArchTheme.success : ArchTheme.textTertiary
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                    visible: {
+                                        const p = root.providerInfo(modelData)
+                                        const known = root.knownProviders[modelData] || {}
+                                        return !!(p.loginHint || known.loginHint || p.keyHint || known.keyHint)
+                                    }
+                                    text: {
+                                        const p = root.providerInfo(modelData)
+                                        const known = root.knownProviders[modelData] || {}
+                                        const login = p.loginHint || known.loginHint || ""
+                                        const key = p.keyHint || known.keyHint || ""
+                                        return [login, key].filter(t => t).join("  ·  ")
+                                    }
+                                    font.family: ArchTheme.fontFamily
+                                    font.pixelSize: ArchTheme.sizeCaption
+                                    color: ArchTheme.textTertiary
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    FField {
+                                        id: keyField
+                                        Layout.fillWidth: true
+                                        placeholderText: {
+                                            const p = root.providerInfo(modelData)
+                                            const known = root.knownProviders[modelData] || {}
+                                            return p.keyHint || known.keyHint || "Paste API key"
+                                        }
+                                        echoMode: TextInput.Password
+                                        font.pixelSize: ArchTheme.sizeSmall
+                                    }
+                                    FBtn {
+                                        text: "Save key"
+                                        highlighted: true
+                                        enabled: keyField.text.trim() !== ""
+                                            || modelData === "ollama"
+                                        onClicked: {
+                                            root.post("/providers",
+                                                      { name: modelData, key: keyField.text.trim() })
+                                            keyField.text = ""
+                                        }
+                                    }
+                                    FBtn {
+                                        text: {
+                                            const p = root.providerInfo(modelData)
+                                            return (p.loginJob && p.loginJob.status === "running")
+                                                ? "Waiting…" : "Sign in"
+                                        }
+                                        visible: {
+                                            const p = root.providerInfo(modelData)
+                                            const known = root.knownProviders[modelData] || {}
+                                            return !!(p.supportsLogin || known.supportsLogin)
+                                        }
+                                        enabled: {
+                                            const p = root.providerInfo(modelData)
+                                            return !(p.loginJob && p.loginJob.status === "running")
+                                        }
+                                        onClicked: root.post("/providers/login",
+                                                             { name: modelData, action: "start" })
+                                    }
+                                    FBtn {
+                                        text: "Use existing login"
+                                        visible: {
+                                            const p = root.providerInfo(modelData)
+                                            return !!(p.supportsLogin && p.cli && p.cli.available
+                                                      && p.mode !== "login")
+                                        }
+                                        onClicked: root.post("/providers/login",
+                                                             { name: modelData, action: "import" })
+                                    }
+                                    FBtn {
+                                        text: "Remove"
+                                        danger: true
+                                        visible: root.providerConfigured(modelData)
+                                            && modelData !== "ollama"
+                                        onClicked: root.post("/providers/delete", { name: modelData })
+                                    }
+                                }
                             }
-                        }
-                        FBtn {
-                            text: "Remove"
-                            danger: true
-                            visible: root.providerConfigured(modelData)
-                            onClicked: root.post("/providers/delete", { name: modelData })
                         }
                     }
                 }
             }
-
-            Item { Layout.fillHeight: true }
         }
 
         // ── Chat ────────────────────────────────────────────────────
@@ -1617,7 +1782,7 @@ Item {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 visible: !root.providerConfigured(chatProviderCombo.currentText || root.chatProvider)
-                text: "Save an API key on the Teams → Providers tab first."
+                text: "Save an API key or sign in on the Teams → Providers tab first."
                 font.family: ArchTheme.fontFamily
                 font.pixelSize: ArchTheme.sizeCaption
                 color: ArchTheme.warning

@@ -4,7 +4,27 @@ Local agent teams for Arch Shell. The UI is `shell/AgentCentrePopup.qml`. The ba
 
 ## Providers
 
-Keys live in `~/.config/arch-shell/agent/providers.json` (mode 600).
+Credentials live in `~/.config/arch-shell/agent/providers.json` (mode 600). Each
+provider accepts an **API key**. Google, OpenAI, Anthropic, and Copilot also
+accept **Sign in**, which opens that vendor's official CLI so usage stays on
+your subscription:
+
+| Provider | API key | Sign in (subscription) |
+| --- | --- | --- |
+| Google Gemini | AI Studio key | Antigravity CLI (`agy`) for Google AI Pro / Ultra. `gcloud` ADC is a fallback. |
+| OpenAI / ChatGPT | platform.openai.com key | Codex CLI (`codex login`) for ChatGPT Plus / Pro |
+| Anthropic / Claude | console.anthropic.com key | Claude Code for Claude Pro / Max |
+| GitHub Copilot | GitHub token | `gh auth login` — uses your Copilot plan |
+| xAI, DeepSeek, Mistral, Groq, OpenRouter | API key | — |
+| Ollama | none (local) | — |
+
+Google no longer serves Gemini CLI / Code Assist logins for personal AI Pro
+accounts (that rail ended 18 June 2026). Sign in for Google AI Pro uses
+[Antigravity CLI](https://www.antigravity.google/docs/cli/install/). A paid
+Gemini API key still works without signing in.
+
+**Use existing login** attaches a session you already completed in the terminal
+(`codex login`, `claude`, `agy`, `gh auth login`).
 
 Gemini models are retired often and return HTTP 404. The daemon:
 

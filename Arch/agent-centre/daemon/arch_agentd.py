@@ -21,8 +21,9 @@ Stdlib only. Local JSON API for the Quickshell UI.
     POST /agents/task           {id, task}
     POST /agents/message        {from, to, text}   to = agent id | team:<id>
     POST /providers             {name, key}
+    POST /providers/login       {name, action=start|import|cancel}
     POST /providers/delete      {name}
-    POST /permissions/resolve   {id, approve}
+    POST /permissions/resolve   {id, approve, sudoPassword?}
     POST /activity/clear
 """
 
@@ -32,16 +33,33 @@ import json
 import os
 import queue
 import re
-import socket
 import subprocess
+import sys
 import threading
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+_DAEMON_DIR = Path(__file__).resolve().parent
+if str(_DAEMON_DIR) not in sys.path:
+    sys.path.insert(0, str(_DAEMON_DIR))
+
+from providers_auth import (  # noqa: E402
+    PROVIDER_DEFAULTS,
+    RETIRED_MODELS,
+    ProviderError,
+    call_provider as auth_call_provider,
+    cancel_login,
+    canonical_provider,
+    import_existing,
+    list_models,
+    peek_models,
+    public_provider,
+    start_login,
+    take_finished_login,
+)
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("ARCH_AGENTD_PORT", "8787"))
@@ -61,54 +79,8 @@ MAX_ACTIVITY = 200
 MAX_HOPS = 8
 MAX_WRITE = 1_000_000
 SHELL_TIMEOUT = 30
+SUDO_TIMEOUT = 180
 HOME = Path.home().resolve()
-
-# Generation-free aliases first so Google retiring a numbered Flash does not
-# 404 the default. Numbered ids are tried only after the alias fails.
-PROVIDER_DEFAULTS = {
-    "openai": {
-        "label": "OpenAI",
-        "model": "gpt-4o-mini",
-        "fallbacks": ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o", "gpt-4.1"],
-    },
-    "anthropic": {
-        "label": "Anthropic",
-        "model": "claude-sonnet-4-20250514",
-        "fallbacks": [
-            "claude-sonnet-4-20250514",
-            "claude-sonnet-4-5-20250929",
-            "claude-3-5-sonnet-latest",
-            "claude-3-5-sonnet-20241022",
-        ],
-    },
-    "google": {
-        "label": "Google Gemini",
-        "model": "gemini-2.5-flash",
-        "fallbacks": [
-            "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-2.0-flash",
-        ],
-        "aliases": ["gemini"],
-    },
-}
-
-PROVIDER_ALIASES = {
-    alias: name
-    for name, cfg in PROVIDER_DEFAULTS.items()
-    for alias in [name] + list(cfg.get("aliases") or [])
-}
-
-RETIRED_MODELS = {
-    "openai": {"gpt-3.5-turbo-0301", "gpt-4-0314"},
-    "anthropic": {"claude-3-sonnet-20240229", "claude-3-opus-20240229"},
-    "google": {
-        "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.5-flash-latest",
-        "gemini-1.5-pro-latest",
-        "gemini-2.0-flash-lite", "gemini-2.0-flash-lite-001",
-        "gemini-2.0-flash-latest",
-    },
-}
 
 DUTIES = ("implement", "review", "coordinate")
 RANK_NAMES = {0: "worker", 1: "lead", 2: "director"}
@@ -126,17 +98,6 @@ RULE_PRESETS = [
 _lock = threading.RLock()
 _work: "queue.Queue[tuple]" = queue.Queue()
 _model_ok: dict[str, str] = {}  # provider → last model that succeeded
-
-
-def canonical_provider(name: str) -> str:
-    return PROVIDER_ALIASES.get((name or "").strip().lower(), "openai")
-
-
-class ProviderError(RuntimeError):
-    def __init__(self, message: str, status: int = 0, body: str = ""):
-        super().__init__(message)
-        self.status = status
-        self.body = body
 
 
 # ── storage ─────────────────────────────────────────────────────────────
@@ -278,243 +239,14 @@ def find_named(items: list, name: str) -> dict | None:
     return None
 
 
-# ── HTTP helpers ────────────────────────────────────────────────────────
-def _http(method: str, url: str, payload: dict | None, headers: dict,
-          timeout: int | None = None) -> dict:
-    if timeout is None:
-        timeout = HTTP_TIMEOUT
-    data = None if payload is None else json.dumps(payload).encode()
-    req = urllib.request.Request(url, data=data, method=method)
-    if payload is not None:
-        req.add_header("Content-Type", "application/json")
-    for key, value in headers.items():
-        req.add_header(key, value)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode()
-            return json.loads(raw) if raw else {}
-    except urllib.error.HTTPError as exc:
-        body = ""
-        try:
-            body = exc.read().decode()[:800]
-        except Exception:
-            pass
-        detail = _extract_api_error(body) or (exc.reason or "error")
-        raise ProviderError(
-            f"HTTP {exc.code} {detail}", status=exc.code, body=body) from exc
-    except (TimeoutError, socket.timeout) as exc:
-        raise ProviderError("timed out talking to the API", status=408) from exc
-    except urllib.error.URLError as exc:
-        reason = exc.reason
-        if isinstance(reason, (TimeoutError, socket.timeout)) or (
-                "timed out" in str(reason).lower()):
-            raise ProviderError(
-                "timed out talking to the API", status=408) from exc
-        raise ProviderError(f"network error: {reason}") from exc
-
-
-def _extract_api_error(body: str) -> str:
-    if not body:
-        return ""
-    try:
-        data = json.loads(body)
-    except ValueError:
-        return body[:240]
-    err = data.get("error")
-    if isinstance(err, dict):
-        return str(err.get("message") or err.get("status") or err)[:240]
-    if isinstance(err, str):
-        return err[:240]
-    return body[:240]
-
-
-def _is_missing_model(exc: ProviderError) -> bool:
-    if exc.status in (404, 400):
-        blob = f"{exc} {exc.body}".lower()
-        return any(tok in blob for tok in (
-            "not found", "not_found", "does not exist", "no longer available",
-            "invalid model", "unknown model", "model_not_found"))
-    return False
-
-
-# ── provider calls ──────────────────────────────────────────────────────
-def _openai(key: str, model: str, system: str, prompt: str) -> str:
-    data = _http("POST", "https://api.openai.com/v1/chat/completions", {
-        "model": model,
-        "max_tokens": 2048,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ],
-    }, {"Authorization": f"Bearer {key}"})
-    return data["choices"][0]["message"]["content"].strip()
-
-
-def _anthropic(key: str, model: str, system: str, prompt: str) -> str:
-    data = _http("POST", "https://api.anthropic.com/v1/messages", {
-        "model": model,
-        "max_tokens": 2048,
-        "system": system,
-        "messages": [{"role": "user", "content": prompt}],
-    }, {"x-api-key": key, "anthropic-version": "2023-06-01"})
-    return "".join(
-        block.get("text", "") for block in data.get("content", [])
-    ).strip()
-
-
-def _google(key: str, model: str, system: str, prompt: str) -> str:
-    model = model.removeprefix("models/")
-    query = urllib.parse.urlencode({"key": key})
-    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{urllib.parse.quote(model, safe='-._')}:generateContent?{query}")
-    gen = {"maxOutputTokens": 2048, "temperature": 0.5}
-    contents = [{"role": "user", "parts": [{"text": prompt}]}]
-    system_body = {
-        "systemInstruction": {"parts": [{"text": system}]},
-        "contents": contents,
-        "generationConfig": {**gen, "thinkingConfig": {"thinkingBudget": 0}},
-    }
-    # Flash-latest "thinks" by default. Never send a body without thinkingBudget: 0
-    # on those models — that is what used to sit on the socket for 2 minutes.
-    try:
-        data = _http("POST", url, system_body, {})
-    except ProviderError as exc:
-        blob = f"{exc} {exc.body}".lower()
-        thinking_unsupported = exc.status == 400 and any(
-            tok in blob for tok in (
-                "thinkingconfig", "thinking_config", "thinkingbudget",
-                "unknown name", "unknown field",
-            ))
-        if not thinking_unsupported:
-            raise
-        data = _http("POST", url, {
-            "systemInstruction": {"parts": [{"text": system}]},
-            "contents": contents,
-            "generationConfig": gen,
-        }, {})
-    parts = data["candidates"][0]["content"]["parts"]
-    return "".join(p.get("text", "") for p in parts).strip()
-
-
 def list_provider_models(provider: str) -> list[str]:
-    provider = canonical_provider(provider)
-    key = load_providers().get(provider, {}).get("key", "")
-    if not key:
-        return list(PROVIDER_DEFAULTS.get(provider, {}).get("fallbacks") or [])
-    try:
-        if provider == "google":
-            data = _http(
-                "GET",
-                "https://generativelanguage.googleapis.com/v1beta/models",
-                None, {"x-goog-api-key": key}, timeout=LIST_TIMEOUT)
-            names = []
-            for item in data.get("models") or []:
-                methods = item.get("supportedGenerationMethods") or []
-                if "generateContent" not in methods:
-                    continue
-                name = (item.get("name") or "").removeprefix("models/")
-                if not name or name in RETIRED_MODELS["google"]:
-                    continue
-                if any(skip in name for skip in (
-                        "image", "tts", "live", "audio", "vision", "embedding")):
-                    continue
-                names.append(name)
-            # Prefer generation-free aliases, then flash, then the rest.
-            names.sort(key=lambda n: (
-                0 if n == "gemini-2.5-flash" else
-                1 if n == "gemini-2.5-flash-lite" else
-                2 if "flash" in n and "latest" not in n and "thinking" not in n else
-                8 if "thinking" in n or n.endswith("-latest") else 5, n))
-            return names
-        if provider == "openai":
-            data = _http("GET", "https://api.openai.com/v1/models", None,
-                         {"Authorization": f"Bearer {key}"}, timeout=LIST_TIMEOUT)
-            names = [m.get("id") for m in data.get("data") or []
-                     if isinstance(m.get("id"), str) and m["id"].startswith("gpt-")]
-            return sorted(set(names))
-        if provider == "anthropic":
-            data = _http("GET", "https://api.anthropic.com/v1/models", None,
-                         {"x-api-key": key, "anthropic-version": "2023-06-01"},
-                         timeout=LIST_TIMEOUT)
-            names = [m.get("id") for m in data.get("data") or []
-                     if isinstance(m.get("id"), str)]
-            return names
-    except ProviderError:
-        pass
-    return list(PROVIDER_DEFAULTS.get(provider, {}).get("fallbacks") or [])
-
-
-GOOGLE_FAST = "gemini-2.5-flash"
-
-
-def _rewrite_google_model(name: str) -> str:
-    n = (name or "").removeprefix("models/").strip()
-    if not n:
-        return GOOGLE_FAST
-    lower = n.lower()
-    if lower.endswith("-latest") or "thinking" in lower:
-        return GOOGLE_FAST
-    return n
-
-
-def _model_candidates(provider: str, requested: str) -> list[str]:
-    cfg = PROVIDER_DEFAULTS.get(provider, {})
-    retired = RETIRED_MODELS.get(provider, set())
-    out: list[str] = []
-    cached = _model_ok.get(provider, "")
-    names = (requested, cached, cfg.get("model"), *(cfg.get("fallbacks") or []))
-    for name in names:
-        if provider == "google":
-            name = _rewrite_google_model(name)
-        if not name or name in retired or name in out:
-            continue
-        out.append(name)
-    return out
+    return list_models(canonical_provider(provider),
+                       load_providers().get(canonical_provider(provider)) or {})
 
 
 def call_provider(provider: str, model: str, system: str, prompt: str) -> str:
-    provider = canonical_provider(provider)
-    key = load_providers().get(provider, {}).get("key", "")
-    if not key:
-        raise ProviderError(f"No API key saved for {provider}")
-
-    callers = {"openai": _openai, "anthropic": _anthropic, "google": _google}
-    caller = callers.get(provider)
-    if not caller:
-        raise ProviderError(f"Unknown provider {provider}")
-
-    errors: list[str] = []
-    tried = _model_candidates(provider, model)
-    # If every candidate 404s, ask the live catalogue once and retry those.
-    live_tried = False
-    idx = 0
-    while idx < len(tried):
-        candidate = tried[idx]
-        idx += 1
-        try:
-            reply = caller(key, candidate, system, prompt)
-            _model_ok[provider] = candidate
-            return reply
-        except ProviderError as exc:
-            errors.append(f"{candidate}: {exc}")
-            if _is_missing_model(exc) and not live_tried:
-                live_tried = True
-                for extra in list_provider_models(provider)[:6]:
-                    if provider == "google":
-                        extra = _rewrite_google_model(extra)
-                        if extra.endswith("-latest") or "thinking" in extra:
-                            continue
-                    if extra not in tried:
-                        tried.append(extra)
-            elif not _is_missing_model(exc) and exc.status not in (404,):
-                # Auth / quota / timeouts should not walk the whole list.
-                if exc.status in (401, 403, 429, 408):
-                    raise
-            continue
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            errors.append(f"{candidate}: bad response ({exc})")
-            continue
-    raise ProviderError("All models failed. " + " | ".join(errors[:4]))
+    return auth_call_provider(
+        load_providers(), provider, model, system, prompt, _model_ok)
 
 
 # ── hierarchy ───────────────────────────────────────────────────────────
@@ -663,9 +395,80 @@ def can_assign(src: dict, dest: dict) -> bool:
 
 
 # ── permissions & actions ───────────────────────────────────────────────
+def _public_payload(payload: dict) -> dict:
+    out = dict(payload or {})
+    for key in _SECRET_KEYS:
+        out.pop(key, None)
+    return out
+
+
+def _elevation_kind(action: dict) -> str:
+    if action.get("sudo") is True or str(action.get("sudo") or "").lower() in (
+            "1", "yes", "true"):
+        return "sudo"
+    cmd = action.get("command") or action.get("cmd") or ""
+    match = _ELEVATION_TOKEN.search(cmd)
+    return match.group(1).lower() if match else ""
+
+
+def _sudo_cached() -> bool:
+    try:
+        return subprocess.run(
+            ["sudo", "-n", "true"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        ).returncode == 0
+    except Exception:
+        return False
+
+
+def _permission_flags(payload: dict) -> dict:
+    kind = _elevation_kind(payload)
+    needs = bool(payload.get("needsSudo") or kind)
+    elevate = kind or ("sudo" if needs else "")
+    return {
+        "needsSudo": needs,
+        "elevation": elevate,
+        "sudoNeedsPassword": bool(
+            needs and elevate == "sudo" and not _sudo_cached()),
+    }
+
+
+def _scrub_secret(text: str, secret: str) -> str:
+    if not text or not secret:
+        return text or ""
+    return text.replace(secret, "***")
+
+
+def _append_chat_note(text: str) -> None:
+    with _lock:
+        chat = load_chat()
+        chat["messages"].append({
+            "role": "assistant",
+            "content": text,
+            "at": time.strftime("%H:%M:%S"),
+        })
+        chat["messages"] = chat["messages"][-MAX_CHAT_MESSAGES:]
+        save_chat(chat)
+
+
+def _live_agent(agent_id: str, fallback: dict | None = None) -> dict | None:
+    if agent_id == "chat":
+        return _chat_agent()
+    return find(STATE["agents"], agent_id or "") or fallback
+
+
 def request_permission(agent: dict, what: str, payload: dict,
                        approver: dict | None = None) -> dict:
-    if approver is None and effective_approval(agent) == "higher":
+    payload = _public_payload(payload)
+    flags = _permission_flags(payload)
+    if flags["needsSudo"]:
+        payload["needsSudo"] = True
+        payload["force_user"] = True
+        approver = None
+    if (approver is None and effective_approval(agent) == "higher"
+            and not payload.get("force_user")):
         approver = find_peer_reviewer(agent) or find_reports_to(agent)
     if effective_approval(agent) == "auto" and not payload.get("force_user"):
         log("permission", f"Auto-approved: {agent.get('name')} {what}",
@@ -683,6 +486,7 @@ def request_permission(agent: dict, what: str, payload: dict,
         "approverId": (approver or {}).get("id", ""),
         "approverName": (approver or {}).get("name", "you"),
         "status": "awaiting-agent" if approver else "awaiting-user",
+        **flags,
     }
     with _lock:
         STATE["pending"].append(entry)
@@ -726,6 +530,8 @@ ALWAYS_BLOCK = re.compile(
     r"|\b(shutdown|reboot|poweroff|halt)\b"
     r"|:\(\)\s*\{\s*:\s*\|\s*:\s*;\s*\})",
     re.I)
+_ELEVATION_TOKEN = re.compile(r"(?:^|[;&|]\s*)(sudo|pkexec)\b", re.I)
+_SECRET_KEYS = ("_sudo_password", "sudoPassword", "sudo_password")
 WORK_HINTS = (
     "create", "write", "make a", "mkdir", "touch ", "save ",
     "file", "directory", "folder", "script", "hello world",
@@ -845,6 +651,8 @@ def _needs_tool_approval(agent: dict, action: dict) -> bool:
     rules = effective_rules(agent)
     mode = effective_approval(agent)
     cmd = action.get("command") or action.get("cmd") or ""
+    if kind == "shell" and _elevation_kind(action):
+        return True
     if kind == "shell" and "ask-before-shell" in rules:
         return True
     if kind == "shell" and "ask-before-network" in rules and NETWORK_CMDS.search(cmd):
@@ -892,7 +700,7 @@ def _tool_read(agent: dict, action: dict) -> str:
     return f"Contents of {path}:\n{text[:8000]}"
 
 
-def _tool_shell(agent: dict, action: dict) -> str:
+def _tool_shell(agent: dict, action: dict, sudo_password: str = "") -> str:
     cmd = (action.get("command") or action.get("cmd") or "").strip()
     if not cmd:
         raise ToolError("shell is missing command")
@@ -908,14 +716,31 @@ def _tool_shell(agent: dict, action: dict) -> str:
     cwd = Path(os.path.expanduser(repo)).resolve() if repo else HOME
     if not cwd.is_dir():
         cwd = HOME
+    elevate = _elevation_kind(action)
+    password = sudo_password or ""
+    timeout = SUDO_TIMEOUT if elevate else SHELL_TIMEOUT
+    env = {**os.environ, "HOME": str(HOME)}
     try:
-        proc = subprocess.run(
-            cmd, shell=True, cwd=str(cwd),
-            capture_output=True, text=True, timeout=SHELL_TIMEOUT,
-            env={**os.environ, "HOME": str(HOME)})
+        if elevate == "sudo":
+            env = {**env, "SUDO_PROMPT": ""}
+            argv = ["sudo", "-S" if password else "-n", "-p", "",
+                    "bash", "-lc", cmd]
+            proc = subprocess.run(
+                argv, input=(password.rstrip("\n") + "\n") if password else None,
+                cwd=str(cwd), capture_output=True, text=True,
+                timeout=timeout, env=env)
+        elif elevate == "pkexec":
+            proc = subprocess.run(
+                cmd, shell=True, cwd=str(cwd),
+                capture_output=True, text=True, timeout=timeout, env=env)
+        else:
+            proc = subprocess.run(
+                cmd, shell=True, cwd=str(cwd),
+                capture_output=True, text=True, timeout=timeout, env=env)
     except subprocess.TimeoutExpired as exc:
-        raise ToolError(f"command timed out after {SHELL_TIMEOUT}s") from exc
+        raise ToolError(f"command timed out after {timeout}s") from exc
     out = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    out = _scrub_secret(out, password)
     if len(out) > 4000:
         out = out[:4000] + "\n…"
     if proc.returncode != 0:
@@ -924,7 +749,8 @@ def _tool_shell(agent: dict, action: dict) -> str:
     return f"Ran `{cmd}`.\n{out}" if out else f"Ran `{cmd}`."
 
 
-def _run_tool(agent: dict, action: dict, persist: bool = True) -> str:
+def _run_tool(agent: dict, action: dict, persist: bool = True,
+              sudo_password: str = "") -> str:
     kind = action.get("type") or ""
     runners = {
         "write": _tool_write,
@@ -935,7 +761,10 @@ def _run_tool(agent: dict, action: dict, persist: bool = True) -> str:
     runner = runners.get(kind)
     if not runner:
         raise ToolError(f"unknown tool {kind}")
-    msg = runner(agent, action)
+    if kind == "shell":
+        msg = runner(agent, action, sudo_password=sudo_password)
+    else:
+        msg = runner(agent, action)
     log("tool", msg.split("\n", 1)[0], agent.get("name", ""), agent.get("team", ""))
     if persist:
         with _lock:
@@ -952,6 +781,9 @@ def _maybe_run_tool(agent: dict, action: dict) -> None:
     if action.get("type") not in TOOL_KINDS:
         return
     try:
+        if _elevation_kind(action):
+            action["needsSudo"] = True
+            action["force_user"] = True
         if _needs_tool_approval(agent, action):
             result = request_permission(agent, _tool_summary(action), action)
             if result.get("auto") and result.get("approved"):
@@ -1296,7 +1128,17 @@ def _system_prompt(agent: dict) -> str:
         '{"type":"read","path":"~/hello.txt"} , '
         '{"type":"assign","to":"AgentName","task":"..."} , '
         '{"type":"message","to":"AgentName|lead","text":"..."} . '
-        "Paths may use ~ . write creates parent folders. "
+        "Paths may use ~ and must stay under the home directory or repo for "
+        "write, mkdir and read. "
+        "To run a command that needs root, emit "
+        '{"type":"shell","command":"sudo pacman -S --noconfirm pkg"} or '
+        '{"type":"shell","sudo":true,"command":"pacman -S --noconfirm pkg"}. '
+        "The user will approve it and type their sudo password. Never invent, "
+        "guess, or store a password. Use sudo only for system work "
+        "(/etc, pacman, systemctl); do not sudo home-directory edits. "
+        "pacman must use --noconfirm. "
+        "Dangerous commands (wipe /, mkfs, reboot) stay blocked even with sudo. "
+        "write creates parent folders. "
         "Use {\"actions\":[]} only when the user asked a question, not when they asked you to do something. "
         "Never claim success unless you emitted the correct action for your role in this reply."
     )
@@ -1428,7 +1270,9 @@ def run_supervise(pending_id: str) -> None:
                 save_state(STATE)
 
 
-def _resolve_permission(ident: str, approve: bool, by: str, note: str = "") -> None:
+def _resolve_permission(ident: str, approve: bool, by: str, note: str = "",
+                        sudo_password: str = "") -> None:
+    password = sudo_password if isinstance(sudo_password, str) else ""
     with _lock:
         entry = next((p for p in STATE["pending"] if p["id"] == ident), None)
         STATE["pending"] = [p for p in STATE["pending"] if p["id"] != ident]
@@ -1440,15 +1284,17 @@ def _resolve_permission(ident: str, approve: bool, by: str, note: str = "") -> N
     log("permission",
         f"{decision} by {by}: {entry.get('agent')} {entry.get('what')}{extra}",
         entry.get("agent", ""))
-    payload = entry.get("payload") or {}
-    agent = find(STATE["agents"], entry.get("agentId") or "")
+    payload = _public_payload(entry.get("payload") or {})
+    agent = _live_agent(entry.get("agentId") or "")
     if not approve:
-        if agent:
+        denied = f"Denied by {by}: {entry.get('what')}."
+        if agent and agent.get("id") == "chat":
+            _append_chat_note(denied)
+        elif agent:
             with _lock:
                 live = find(STATE["agents"], agent["id"]) or agent
                 live["lastReply"] = (
-                    (live.get("lastReply") or "") +
-                    f"\n\nDenied by {by}: {entry.get('what')}."
+                    (live.get("lastReply") or "") + "\n\n" + denied
                 ).strip()
                 save_state(STATE)
         return
@@ -1456,6 +1302,9 @@ def _resolve_permission(ident: str, approve: bool, by: str, note: str = "") -> N
     inner = _tool_from_ask(payload) if payload.get("type") == "ask" else None
     if inner:
         payload = inner
+    if _elevation_kind(payload):
+        payload["needsSudo"] = True
+        payload["force_user"] = True
 
     # Agent approved a tool → send it up. Only the user (or auto) executes.
     if (entry.get("approverKind") == "agent"
@@ -1463,18 +1312,20 @@ def _resolve_permission(ident: str, approve: bool, by: str, note: str = "") -> N
         approver = find(STATE["agents"], entry.get("approverId") or "")
         nxt = find_reports_to(approver) if approver else None
         what = entry.get("what") or _tool_summary(payload)
-        if nxt:
+        flags = _permission_flags(payload)
+        if nxt and not flags["needsSudo"]:
             new_entry = {
                 "id": uuid.uuid4().hex[:8],
                 "agent": entry.get("agent", ""),
                 "agentId": entry.get("agentId") or "",
                 "what": f"cleared by {entry.get('approverName')}: {what}",
-                "payload": payload,
+                "payload": _public_payload(payload),
                 "at": time.strftime("%H:%M:%S"),
                 "approverKind": "agent",
                 "approverId": nxt["id"],
                 "approverName": nxt.get("name", ""),
                 "status": "awaiting-agent",
+                **flags,
             }
             with _lock:
                 STATE["pending"].append(new_entry)
@@ -1490,12 +1341,13 @@ def _resolve_permission(ident: str, approve: bool, by: str, note: str = "") -> N
             "agent": entry.get("agent", ""),
             "agentId": entry.get("agentId") or "",
             "what": f"{entry.get('approverName')} asks you to apply: {what}",
-            "payload": payload,
+            "payload": _public_payload(payload),
             "at": time.strftime("%H:%M:%S"),
             "approverKind": "user",
             "approverId": "",
             "approverName": "you",
             "status": "awaiting-user",
+            **flags,
         }
         with _lock:
             STATE["pending"].append(new_entry)
@@ -1506,16 +1358,39 @@ def _resolve_permission(ident: str, approve: bool, by: str, note: str = "") -> N
         _notify(new_entry["what"])
         return
 
+    if (agent and payload.get("type") == "shell"
+            and _elevation_kind(payload) == "sudo"
+            and not password and not _sudo_cached()):
+        entry["sudoNeedsPassword"] = True
+        entry["needsSudo"] = True
+        entry["elevation"] = "sudo"
+        entry["approverKind"] = "user"
+        entry["approverName"] = "you"
+        entry["status"] = "awaiting-user"
+        with _lock:
+            STATE["pending"].append(entry)
+            save_state(STATE)
+        _notify("sudo needs your password — type it on the prompt and approve.")
+        return
+
     if agent and payload.get("type") in TOOL_KINDS:
+        persist = agent.get("id") != "chat"
         try:
-            _run_tool(agent, payload)
+            msg = _run_tool(agent, payload, persist=persist,
+                            sudo_password=password)
+            if not persist:
+                _append_chat_note(msg)
         except ToolError as exc:
-            log("error", str(exc), agent.get("name", ""))
-            with _lock:
-                live = find(STATE["agents"], agent["id"]) or agent
-                live["lastReply"] = str(exc)
-                live["status"] = "error"
-                save_state(STATE)
+            err = _scrub_secret(str(exc), password)
+            log("error", err, agent.get("name", ""))
+            if agent.get("id") == "chat":
+                _append_chat_note(err)
+            else:
+                with _lock:
+                    live = find(STATE["agents"], agent["id"]) or agent
+                    live["lastReply"] = err
+                    live["status"] = "error"
+                    save_state(STATE)
         return
     if agent and payload.get("type") in ("assign", "message"):
         _apply_actions(agent, [payload], 0)
@@ -1622,9 +1497,14 @@ def _chat_system() -> str:
         '{"actions":[{"type":"write","path":"~/hello.txt","content":"hi"}]}\n'
         "Action types: write (path, content), mkdir (path), read (path), "
         "shell (command). Paths may use ~ and must stay under the home directory. "
+        "For root work emit "
+        '{"type":"shell","command":"sudo pacman -S --noconfirm pkg"} or '
+        '{"type":"shell","sudo":true,"command":"..."}. The user approves and '
+        "types their sudo password — never invent or store one. "
         "When you are only talking, end with {\"actions\":[]}. "
         "Do not claim you wrote a file or ran a command unless you emitted "
-        "that action. Dangerous commands (rm -rf of /, mkfs, reboot) are blocked."
+        "that action. Dangerous commands (rm -rf of /, mkfs, reboot) are blocked "
+        "even with sudo."
     )
 
 
@@ -1663,17 +1543,29 @@ def run_chat_turn(provider: str, model: str, text: str) -> dict:
             raw = call_provider(use_provider, use_model, _chat_system(), prompt)
             reply, actions, _had = _split_actions(raw)
             tool_bits: list[str] = []
+            waiting_sudo = False
             for action in actions:
                 if not isinstance(action, dict):
                     continue
                 action = _normalize_action(action)
                 if action.get("type") not in TOOL_KINDS:
                     continue
+                if _elevation_kind(action):
+                    action["needsSudo"] = True
+                    action["force_user"] = True
+                    cmd = (action.get("command") or action.get("cmd") or "").strip()
+                    request_permission(agent, _tool_summary(action), action)
+                    tool_bits.append(
+                        f"Waiting for you to approve `{cmd}` and enter your "
+                        "sudo password. It is used once and not saved."
+                    )
+                    waiting_sudo = True
+                    continue
                 try:
                     tool_bits.append(_run_tool(agent, action, persist=False))
                 except ToolError as exc:
                     tool_bits.append(str(exc))
-            if not tool_bits:
+            if not tool_bits or waiting_sudo:
                 break
             notes.extend(tool_bits)
             prompt = (
@@ -1758,14 +1650,21 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/state":
             with _lock:
                 stored = load_providers()
-                providers = {}
-                for name, cfg in PROVIDER_DEFAULTS.items():
-                    providers[name] = {
-                        "label": cfg["label"],
-                        "configured": bool(stored.get(name, {}).get("key")),
-                        "model": _model_ok.get(name) or cfg["model"],
-                        "fallbacks": cfg["fallbacks"],
-                    }
+                dirty = False
+                for name in list(PROVIDER_DEFAULTS):
+                    rec = take_finished_login(name)
+                    if rec:
+                        stored[name] = rec
+                        dirty = True
+                        log("provider",
+                            f"{PROVIDER_DEFAULTS[name]['label']} signed in"
+                            + (f" as {rec.get('account')}" if rec.get("account") else ""))
+                if dirty:
+                    save_providers(stored)
+                providers = {
+                    name: public_provider(name, stored.get(name), _model_ok.get(name, ""))
+                    for name in PROVIDER_DEFAULTS
+                }
                 return self._send({
                     "ok": True,
                     "teams": STATE["teams"],
@@ -1778,9 +1677,13 @@ class Handler(BaseHTTPRequestHandler):
                     "providers": providers,
                     "knownProviders": {
                         n: {"label": c["label"], "model": c["model"],
-                            "fallbacks": c["fallbacks"]}
+                            "fallbacks": peek_models(n, stored.get(n)) or c["fallbacks"],
+                            "supportsLogin": bool(c.get("supportsLogin")),
+                            "keyHint": c.get("keyHint") or "",
+                            "loginHint": c.get("loginHint") or ""}
                         for n, c in PROVIDER_DEFAULTS.items()
                     },
+                    "providerOrder": list(PROVIDER_DEFAULTS),
                     "rulePresets": RULE_PRESETS,
                     "dutyPresets": list(DUTIES),
                     "ranks": RANK_NAMES,
@@ -1946,28 +1849,66 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/providers":
             name = canonical_provider(body.get("name") or "")
-            key = body.get("key") or ""
+            key = (body.get("key") or "").strip()
             if name not in PROVIDER_DEFAULTS:
                 return self._send({"error": "unknown provider"}, 400)
+            if name != "ollama" and not key:
+                return self._send({"error": "key required"}, 400)
             providers = load_providers()
-            providers[name] = {"key": key}
+            rec = dict(providers.get(name) or {})
+            rec["key"] = key
+            rec["mode"] = "key" if key else "local"
+            rec.pop("via", None)
+            providers[name] = rec
             save_providers(providers)
             _model_ok.pop(name, None)
-            log("provider", f"{PROVIDER_DEFAULTS[name]['label']} key saved")
+            log("provider", f"{PROVIDER_DEFAULTS[name]['label']} API key saved")
             return self._send({"ok": True})
+
+        if path == "/providers/login":
+            name = canonical_provider(body.get("name") or "")
+            action = (body.get("action") or "start").strip().lower()
+            if name not in PROVIDER_DEFAULTS:
+                return self._send({"error": "unknown provider"}, 400)
+            if not PROVIDER_DEFAULTS[name].get("supportsLogin"):
+                return self._send({"error": "this provider only accepts an API key"}, 400)
+            if action == "cancel":
+                cancel_login(name)
+                return self._send({"ok": True})
+            try:
+                if action == "import":
+                    rec = import_existing(name)
+                    providers = load_providers()
+                    providers[name] = rec
+                    save_providers(providers)
+                    _model_ok.pop(name, None)
+                    log("provider",
+                        f"{PROVIDER_DEFAULTS[name]['label']} using existing login"
+                        + (f" ({rec.get('account')})" if rec.get("account") else ""))
+                    return self._send({"ok": True, "account": rec.get("account") or ""})
+                result = start_login(name)
+            except ProviderError as exc:
+                return self._send({"error": str(exc)}, 400)
+            log("provider", f"{PROVIDER_DEFAULTS[name]['label']} sign-in started")
+            return self._send(result)
 
         if path == "/providers/delete":
             name = canonical_provider(body.get("name") or "")
             providers = load_providers()
             providers.pop(name, None)
             save_providers(providers)
+            cancel_login(name)
             _model_ok.pop(name, None)
             return self._send({"ok": True})
 
         if path == "/permissions/resolve":
             ident = body.get("id")
             approve = bool(body.get("approve"))
-            _resolve_permission(ident, approve, "you")
+            sudo_password = body.get("sudoPassword") or body.get("sudo_password") or ""
+            if not isinstance(sudo_password, str):
+                sudo_password = ""
+            _resolve_permission(ident, approve, "you",
+                                sudo_password=sudo_password)
             return self._send({"ok": True})
 
         if path == "/activity/clear":
@@ -2016,6 +1957,16 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     threading.Thread(target=worker, daemon=True).start()
+
+    def _warm_models() -> None:
+        stored = load_providers()
+        for name in PROVIDER_DEFAULTS:
+            try:
+                list_models(name, stored.get(name) or {})
+            except Exception:
+                pass
+
+    threading.Thread(target=_warm_models, daemon=True).start()
     log("daemon", f"arch-agentd listening on {HOST}:{PORT}")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 

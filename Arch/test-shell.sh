@@ -17,8 +17,8 @@ rm -f "${CONFIG_DIR}"/*.qml "${CONFIG_DIR}"/theme/*.qml
 cp -a "${ROOT}/shell/." "${CONFIG_DIR}/"
 cp -a "${ROOT}/scripts/." "${CONFIG_DIR}/scripts/"
 cp "${ROOT}/config/hyprland/layers.conf" "${CONFIG_DIR}/hyprland/layers.conf"
-cp "${ROOT}/agent-centre/daemon/arch_agentd.py" "${CONFIG_DIR}/agent-daemon/arch_agentd.py"
-chmod +x "${CONFIG_DIR}/agent-daemon/arch_agentd.py"
+cp "${ROOT}/agent-centre/daemon/"*.py "${CONFIG_DIR}/agent-daemon/"
+chmod +x "${CONFIG_DIR}/agent-daemon/"*.py
 chmod +x "${CONFIG_DIR}/scripts/"*.sh 2>/dev/null || true
 chmod +x "${CONFIG_DIR}/scripts/"*.py 2>/dev/null || true
 mkdir -p "${HOME}/.config/systemd/user"

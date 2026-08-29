@@ -6,5 +6,13 @@ Arch/sddm/arch-shell/wallpaper
 Arch/sddm/arch-shell/live-state/
 Arch/grub/arch-shell/
 Arch/config/providers.json
+**/providers.json
+**/agent/state.json
+**/agent/chat.json
 __pycache__/
 *.pyc
+
+# Agent Centre credentials (never commit)
+**/providers.json
+**/agent/state.json
+**/agent/chat.json

@@ -84,10 +84,14 @@ copy_shell() {
   cp -a "${ARCH_ROOT}/shell/." "${CONFIG_DIR}/"
   cp -a "${ARCH_ROOT}/scripts/." "${CONFIG_DIR}/scripts/"
   cp -f "${ARCH_ROOT}/config/hyprland/layers.conf" "${CONFIG_DIR}/hyprland/layers.conf"
-  cp -f "${ARCH_ROOT}/agent-centre/daemon/arch_agentd.py" "${CONFIG_DIR}/agent-daemon/arch_agentd.py"
-  chmod +x "${CONFIG_DIR}/agent-daemon/arch_agentd.py"
+  cp -f "${ARCH_ROOT}/agent-centre/daemon/"*.py "${CONFIG_DIR}/agent-daemon/"
+  chmod +x "${CONFIG_DIR}/agent-daemon/"*.py
   chmod +x "${CONFIG_DIR}/scripts/"*.sh 2>/dev/null || true
   chmod +x "${CONFIG_DIR}/scripts/"*.py 2>/dev/null || true
+  if [[ -x "${ARCH_ROOT}/scripts/install-login-clis.sh" ]]; then
+    log "Installing Agent Centre login CLIs (agy, Codex, Claude Code)..."
+    bash "${ARCH_ROOT}/scripts/install-login-clis.sh" || true
+  fi
 
   mkdir -p "${HOME}/.config/systemd/user"
   cp -f "${ARCH_ROOT}/agent-centre/daemon/systemd/arch-agentd.service" \

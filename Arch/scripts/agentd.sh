@@ -38,15 +38,25 @@ case "${1:-status}" in
     systemctl --user disable --now "$UNIT" >/dev/null 2>&1 && echo '{"ok":true}' || echo '{"ok":false}'
     ;;
   get)
-    curl -s --max-time 15 "${BASE}${2:-/state}" || echo '{"ok":false}'
+    tmax=15
+    case "${2:-}" in
+      /models*) tmax=40 ;;
+    esac
+    curl -s --max-time "${tmax}" "${BASE}${2:-/state}" || echo '{"ok":false}'
     ;;
   post)
     tmax=40
     case "${2:-}" in
       /chat/send) tmax=120 ;;
+      /permissions/resolve) tmax=180 ;;
     esac
-    curl -s --max-time "${tmax}" -X POST -H 'Content-Type: application/json' \
-      -d "${3:-\{\}}" "${BASE}${2:-/}" || echo '{"ok":false}'
+    if [[ "${3:-}" == "-" ]]; then
+      curl -s --max-time "${tmax}" -X POST -H 'Content-Type: application/json' \
+        -d @- "${BASE}${2:-/}" || echo '{"ok":false}'
+    else
+      curl -s --max-time "${tmax}" -X POST -H 'Content-Type: application/json' \
+        -d "${3:-\{\}}" "${BASE}${2:-/}" || echo '{"ok":false}'
+    fi
     ;;
   *)
     echo "Usage: $0 status|start|stop|enable|disable|get <path>|post <path> <json>" >&2

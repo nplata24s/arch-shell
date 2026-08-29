@@ -5,7 +5,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KEYBINDS="${1:-$ROOT/config/keybinds.json}"
 OUT="${2:-$ROOT/config/hyprland/keybinds.conf}"
-QS_PATH="${3:-$HOME/.config/arch-shell}"
+# Keep ~ unexpanded so the file is portable across users.
+QS_PATH="${3:-~/.config/arch-shell}"
 
 if [[ ! -f "$KEYBINDS" ]]; then
   echo "Missing keybinds file: $KEYBINDS" >&2
@@ -32,6 +33,10 @@ module_map = {
     "settings": "Settings",
     "music": "DynamicMusic",
     "network": "NetworkBluetooth",
+    "wallpaper": "Wallpaper",
+    "clock": "ClockWeather",
+    "battery": "BatteryNotifications",
+    "gaming": "GamingMode",
 }
 
 def hypr_mods(mods):
@@ -87,6 +92,14 @@ for name, b in binds.items():
         lines.append(f"{prefix}{key}, togglefloating,")
     elif name == "app.terminal":
         lines.append(f"{prefix}{key}, exec, kitty")
+    elif name == "app.browser":
+        lines.append(f"{prefix}{key}, exec, firefox")
+    elif name == "app.files":
+        lines.append(f"{prefix}{key}, exec, nautilus")
+    elif name == "app.lock":
+        lines.append(
+            f"{prefix}{key}, exec, bash ~/.config/hypr/scripts/lock.sh"
+        )
     elif name == "app.screenshot":
         lines.append(f"{prefix}{key}, exec, flameshot gui")
     elif name == "app.colorPicker":

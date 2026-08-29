@@ -75,6 +75,9 @@ enable_services() {
 
   systemctl --user enable pipewire.socket pipewire-pulse.socket wireplumber.service 2>/dev/null || true
   systemctl --user enable hyprpolkitagent.service 2>/dev/null || true
+  if systemctl list-unit-files ollama.service >/dev/null 2>&1; then
+    sudo systemctl enable ollama.service
+  fi
 }
 
 copy_shell() {
@@ -89,7 +92,7 @@ copy_shell() {
   chmod +x "${CONFIG_DIR}/scripts/"*.sh 2>/dev/null || true
   chmod +x "${CONFIG_DIR}/scripts/"*.py 2>/dev/null || true
   if [[ -x "${ARCH_ROOT}/scripts/install-login-clis.sh" ]]; then
-    log "Installing Agent Centre login CLIs (agy, Codex, Claude Code)..."
+    log "Installing Agent Centre login CLIs (agy, Codex, Claude, gh, Ollama)..."
     bash "${ARCH_ROOT}/scripts/install-login-clis.sh" || true
   fi
 
@@ -105,7 +108,8 @@ copy_shell() {
 
   bash "${ARCH_ROOT}/scripts/gen-hypr-binds.sh" \
     "${CONFIG_DIR}/keybinds.json" \
-    "${CONFIG_DIR}/hyprland/keybinds.conf" || true
+    "${CONFIG_DIR}/hyprland/keybinds.conf" \
+    "~/.config/arch-shell" || true
 }
 
 copy_hypr() {

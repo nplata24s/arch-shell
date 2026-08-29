@@ -4,41 +4,17 @@
     "height": 48,
     "color": "#1a1f28",
     "opacity": 0.6,
-    "margins": {
-      "top": 6,
-      "left": 10,
-      "right": 10,
-      "bottom": 0
-    },
+    "margins": { "top": 6, "left": 10, "right": 10, "bottom": 0 },
     "modules": {
-      "left": [
-        "Start",
-        "AgentCentre",
-        "DesktopManager",
-        "DynamicMusic"
-      ],
-      "center": [
-        "ClockWeather"
-      ],
-      "right": [
-        "SystemTray",
-        "NetworkBluetooth",
-        "BatteryNotifications",
-        "Audio",
-        "Settings",
-        "Wallpaper"
-      ]
+      "left": ["Start", "AgentCentre", "DesktopManager", "DynamicMusic"],
+      "center": ["ClockWeather"],
+      "right": ["SystemTray", "NetworkBluetooth", "BatteryNotifications", "Audio", "Settings", "Wallpaper"]
     }
   },
-  "workspaces": {
-    "count": 9,
-    "showOnBar": 5
-  },
+  "workspaces": { "count": 9, "showOnBar": 5 },
   "theme": {
     "accent": "#0078d4",
     "fontFamily": "JetBrainsMono Nerd Font"
   },
-  "weather": {
-    "unit": "celsius"
-  }
+  "weather": { "unit": "celsius" }
 }

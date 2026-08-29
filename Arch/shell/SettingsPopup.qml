@@ -22,10 +22,15 @@ Item {
     ]
 
     readonly property var bindOrder: [
-        "shell.start", "shell.keybindHelp", "module.audio", "module.clipboard",
+        "shell.start", "shell.keybindHelp",
+        "module.agentCentre", "module.audio", "module.clipboard",
+        "module.network", "module.music", "module.wallpaper", "module.clock",
+        "module.battery", "module.gaming", "module.settings",
         "module.notes", "module.calculator", "module.taskView",
-        "module.quickSettings", "app.terminal", "app.screenshot",
-        "app.colorPicker", "window.close", "window.toggleFloat"
+        "module.quickSettings",
+        "app.terminal", "app.browser", "app.files", "app.lock",
+        "app.screenshot", "app.colorPicker",
+        "window.close", "window.toggleFloat"
     ]
 
     readonly property var taskbarSettings: {

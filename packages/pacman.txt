@@ -71,3 +71,12 @@ alsa-firmware
 alsa-utils
 alsa-ucm-conf
 awww
+swww
+curl
+github-cli
+libqalculate
+nemo
+lsp-plugins
+calf
+pamixer
+ollama

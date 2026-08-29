@@ -13,12 +13,27 @@ HYPR_CONFIG="${HOME}/.config/hypr/hyprland.conf"
 AUTOSTART_FILE="${HOME}/.config/hypr/config/autostart.conf"
 
 ARCH_PACKAGES=(
-  quickshell hyprland kitty zsh fastfetch ttf-jetbrains-mono-nerd
-  pipewire pipewire-pulse wireplumber networkmanager bluez bluez-utils
-  upower mako flameshot nemo playerctl jq cliphist wl-clipboard
-  brightnessctl wlsunset pacman-contrib power-profiles-daemon
-  udisks2 hyprpicker qalculate-gtk wf-recorder swww wdisplays easyeffects
-  sddm imagemagick
+  # Desktop + shell
+  quickshell hyprland hypridle hyprlock hyprpicker hyprpolkitagent
+  kitty zsh fastfetch sddm imagemagick
+  ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji
+  qt6-wayland qt6-declarative qt6-svg qt6-imageformats
+  xdg-desktop-portal xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
+  xdg-user-dirs xdg-utils polkit libnotify
+  # Widgets: audio / music / EQ
+  pipewire pipewire-pulse pipewire-alsa wireplumber gst-plugin-pipewire
+  alsa-utils playerctl easyeffects lsp-plugins calf pamixer
+  # Widgets: network / bluetooth / power / brightness / night light
+  networkmanager bluez bluez-utils
+  upower brightnessctl wlsunset power-profiles-daemon udisks2
+  # Widgets: clipboard / wallpaper / recorder / displays / color picker
+  cliphist wl-clipboard swww wf-recorder wdisplays
+  # Widgets: calculator, files, updates, weather, bluetooth helper
+  libqalculate qalculate-gtk nemo nautilus
+  pacman-contrib jq bc curl python python-gobject python-dbus
+  flameshot
+  # Agent Centre subscription CLIs that ship as packages
+  github-cli ollama
 )
 
 install_packages() {
@@ -47,10 +62,6 @@ copy_configs() {
   cp "${ROOT}/config/hyprland/layers.conf" "${CONFIG_DIR}/hyprland/layers.conf"
   cp "${ROOT}/agent-centre/daemon/"*.py "${CONFIG_DIR}/agent-daemon/"
   chmod +x "${CONFIG_DIR}/agent-daemon/"*.py
-  if [[ -x "${ROOT}/scripts/install-login-clis.sh" ]]; then
-    echo "==> Installing Agent Centre login CLIs (agy, Codex, Claude Code)..."
-    bash "${ROOT}/scripts/install-login-clis.sh" || true
-  fi
   chmod +x "${CONFIG_DIR}/scripts/"*.sh 2>/dev/null || true
   chmod +x "${CONFIG_DIR}/scripts/"*.py 2>/dev/null || true
 
@@ -70,8 +81,16 @@ copy_configs() {
   touch "${CONFIG_DIR}/notes.txt"
   bash "${ROOT}/scripts/gen-hypr-binds.sh" \
     "${CONFIG_DIR}/keybinds.json" \
-    "${CONFIG_DIR}/hyprland/keybinds.conf"
+    "${CONFIG_DIR}/hyprland/keybinds.conf" \
+    "~/.config/arch-shell"
   echo "Configs installed to ${CONFIG_DIR}"
+}
+
+install_login_clis() {
+  local helper="${ROOT}/scripts/install-login-clis.sh"
+  [[ -x "$helper" ]] || return 0
+  echo "==> Installing Agent Centre login CLIs (agy, Codex, Claude, gh, Ollama)..."
+  bash "$helper" || true
 }
 
 backup_hypr() {
@@ -118,6 +137,14 @@ wire_hypr_includes() {
       echo ""
       echo "# Arch Shell flyout blur"
       echo "source = ~/.config/arch-shell/hyprland/layers.conf"
+    } >> "${target}"
+    added=1
+  fi
+  if ! grep -q 'arch-shell/hyprland/keybinds.conf' "${target}"; then
+    {
+      echo ""
+      echo "# Arch Shell keybinds (from Settings → Keybinds)"
+      echo "source = ~/.config/arch-shell/hyprland/keybinds.conf"
     } >> "${target}"
     added=1
   fi
@@ -347,6 +374,7 @@ case "${1:-}" in
   --enable)
     install_packages
     copy_configs
+    install_login_clis
     backup_hypr
     wire_hypr_includes
     install_sddm_theme
@@ -359,6 +387,7 @@ case "${1:-}" in
   *)
     install_packages
     copy_configs
+    install_login_clis
     backup_hypr
     wire_hypr_includes
     install_sddm_theme

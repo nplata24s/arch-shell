@@ -87,21 +87,20 @@ Item {
     function defaultSettings() {
         return {
             taskbar: {
-                position: "top",
+                position: "bottom",
                 height: 48,
-                color: "#1c1c1c",
-                opacity: 0.72,
+                color: "#1a1f28",
+                opacity: 0.6,
                 margins: { top: 6, left: 10, right: 10, bottom: 0 },
                 modules: {
-                    left: ["Start", "AgentCentre", "DesktopManager"],
-                    center: ["DynamicMusic"],
-                    right: ["Audio", "NetworkBluetooth", "BatteryNotifications",
-                            "SystemTray", "Keyboard", "ClockWeather",
-                            "QuickSettings", "Settings"]
+                    left: ["Start", "AgentCentre", "DesktopManager", "DynamicMusic"],
+                    center: ["ClockWeather"],
+                    right: ["SystemTray", "NetworkBluetooth", "BatteryNotifications",
+                            "Audio", "Settings", "Wallpaper"]
                 }
             },
             workspaces: { count: 9, showOnBar: 5 },
-            theme: { accent: "#60cdff", fontFamily: "JetBrainsMono Nerd Font" },
+            theme: { accent: "#0078d4", fontFamily: "JetBrainsMono Nerd Font" },
             weather: { unit: "celsius" }
         }
     }

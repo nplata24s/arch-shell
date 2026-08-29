@@ -117,7 +117,13 @@ FocusScope {
     function openInFiles(app) {
         const dir = desktopDir(app)
         if (!dir) return
-        Quickshell.execDetached(["nemo", dir])
+        Quickshell.execDetached([
+            "bash", "-lc",
+            "dir=" + JSON.stringify(dir)
+            + '; if command -v nemo >/dev/null; then nemo "$dir"'
+            + '; elif command -v nautilus >/dev/null; then nautilus "$dir"'
+            + '; else xdg-open "$dir"; fi'
+        ])
     }
 
     function openInTerminal(app) {

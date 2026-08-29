@@ -5,6 +5,7 @@ After=graphical-session.target
 [Service]
 Type=simple
 ExecStart=/usr/bin/python3 %h/.config/arch-shell/agent-daemon/arch_agentd.py
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
 Restart=on-failure
 RestartSec=3
 

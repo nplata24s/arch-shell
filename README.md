@@ -223,6 +223,7 @@ At SDDM, choose **Hyprland** and sign in.
 - Super+E opens files
 - Super+F opens Firefox
 - Super+A opens Agent Centre
+- Super+V / C / N open Audio, Clipboard, Network
 - Super+X closes the focused window
 - Super+Shift+H shows the keybind list
 

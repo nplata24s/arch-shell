@@ -33,6 +33,213 @@ The package list includes Intel video packages (`vulkan-intel`, `intel-media-dri
 
 ---
 
+## archinstall — every setting
+
+`archinstall` is the official guided installer on the Arch ISO. Menu names move around between **3.x** (curses) and **4.x** (Textual UI), but the jobs are the same. Work **top to bottom**, then choose **Install**. You can go back with Esc and change anything before that.
+
+**Keys**
+
+| Key | Action |
+| --- | --- |
+| Arrow keys / Tab | Move |
+| Enter | Open / confirm |
+| Esc | Back to the main list |
+| Space | Toggle a checkbox (kernels, extra repos) |
+
+**Cheat sheet (this desktop)**
+
+| Setting | Choose |
+| --- | --- |
+| Archinstall language | English (or yours) — this is only the installer UI |
+| Locales | Keyboard **uk** if you use a UK board, else **us**. Locale **en_GB.UTF-8** or **en_US.UTF-8**. Encoding **UTF-8** |
+| Mirrors and repositories | Your country. Optional: enable **multilib**. Leave testing repos off |
+| Disk configuration | **Best-effort default partition layout** on the disk you want Arch on. This **wipes that disk** |
+| Filesystem | **ext4** (simplest). btrfs is fine if you already use snapshots |
+| Disk encryption | Off unless you want LUKS. If on, you type that passphrase at every boot, before SDDM |
+| Swap | On (zram) if the menu offers it. Harmless either way |
+| Bootloader | **Grub** |
+| Unified kernel images | Off / no |
+| Kernels | **linux** only (the default kernel). Do not add linux-lts / zen / hardened unless you know why |
+| Hostname | anything, e.g. `arch-vm` |
+| Root password | set one and remember it |
+| User account | create **your** user, set a password, add the user to **wheel** (sudo) |
+| Profile | **Minimal** |
+| Applications / audio | **Pipewire**. Bluetooth optional (this repo installs it later anyway) |
+| Network configuration | **NetworkManager** |
+| Additional packages | **leave empty** — `./install.sh` installs the desktop |
+| Timezone | your timezone, e.g. `Europe/London` |
+| Automatic time sync (NTP) | **On** |
+
+Then **Install**. When it finishes, reboot, log in as **your user** (not root) on the TTY, and continue at **Install this desktop**.
+
+### Archinstall language
+
+Language of the installer screens only. It does not set the installed system language.
+
+**Choose:** English, unless you want the menus in another language.
+
+### Locales (keyboard, language, encoding)
+
+On 4.x this is one **Locales** item. On 3.x you may see **Keyboard layout** and **Locale language** separately.
+
+- **Keyboard layout** — keys in the live ISO and the installed TTY. Hyprland in this repo later defaults to **gb**. Pick **uk** (or `gb`) for a UK keyboard, **us** otherwise. You can still change Hyprland later in `~/.config/hypr/config/settings.conf`.
+- **Locale language** — `en_GB.UTF-8` or `en_US.UTF-8`.
+- **Locale encoding** — **UTF-8**.
+
+Do not leave the locale unset; a missing UTF-8 locale makes some apps noisy later.
+
+### Mirrors and repositories
+
+Sets `/etc/pacman.d/mirrorlist`. Closer mirrors make `archinstall` and `./install.sh` much faster.
+
+**Choose:** your country, or the geographically closest region. If the list is long, pick one country rather than “worldwide”.
+
+**Optional repositories:** enable **multilib** if you might run 32-bit games/Wine later. Leave **core-testing** / **extra-testing** off.
+
+If downloads stall, Esc back, pick another region, and try Install again (the disk is not written until Install runs).
+
+### Disk configuration
+
+This is the dangerous step. The disk you select is **erased**.
+
+1. If you have more than one disk, leave `archinstall` with Esc, run `lsblk` in the shell, and note the right name (`/dev/sda`, `/dev/nvme0n1`, `/dev/vda` in a VM). The USB stick must **not** be the target.
+2. Open **Disk configuration**.
+3. Choose **Use a best-effort default partition layout** (wording may be “Best-effort default layout”).
+4. Select **only** the target disk.
+5. Filesystem: **ext4** unless you already want btrfs snapshots.
+
+What that layout typically creates on UEFI:
+
+| Partition | Role |
+| --- | --- |
+| ~1 GiB FAT32 | EFI, mounted at `/boot` |
+| Rest of the disk | Root `/` (ext4 or btrfs) |
+
+There is usually **no** separate `/home`. That is fine for a VM or a single-user machine.
+
+**Do not** use manual partitioning unless you are dual-booting and already know how to reuse an existing EFI partition without formatting it. This repo does not need a special layout.
+
+**VMs:** pick the virtual disk (often `vda` or `sda`), not the Arch ISO.
+
+### Disk encryption (LUKS)
+
+Optional. The EFI partition stays unencrypted; `/` is unlocked with a passphrase before Linux starts.
+
+**Choose:** skip unless you need a stolen-laptop passphrase. If you enable it, pick a passphrase you can type in a small GRUB/EFI prompt — not only a password manager.
+
+### Swap
+
+4.x has a **Swap** row (often **swap on zram**). 3.x may hide this under disk options.
+
+**Choose:** enable zram if offered (zstd compression is a good default). A swap **partition** is not required. Hibernate needs extra work and is not set up by this repo.
+
+### Bootloader
+
+**Choose: Grub.** This repo installs a GRUB theme that matches the login screen. If the firmware is UEFI, GRUB still works.
+
+| Option | Use it? |
+| --- | --- |
+| **Grub** | Yes — recommended |
+| systemd-boot | Works, but the GRUB theme is skipped |
+| Limine | Works as a bootloader; the GRUB theme is skipped |
+
+Leave **install to removable / EFI fallback** at the installer default on a single-OS machine. Turn extra “overwrite NVRAM” options off if you are dual-booting and the help text says it will replace other OS boot entries.
+
+**Unified kernel images (UKI):** leave **off**. Not required for this desktop.
+
+### Kernels
+
+**Choose: `linux` only** (sometimes labelled “Latest Linux kernel”).
+
+| Kernel | For this desktop |
+| --- | --- |
+| **linux** | Yes |
+| linux-lts | Optional spare; skip on a first install |
+| linux-zen | Gaming-oriented; skip |
+| linux-hardened | Stricter; can surprise desktop apps; skip |
+
+Space-toggles extras. More kernels mean more downloads and a busier GRUB menu. This repo does not need them.
+
+### Hostname
+
+The name other devices see on the network (`arch-vm`, `arch-laptop`, …). Letters, digits, and hyphens. Do not use spaces.
+
+### Authentication (root password and user)
+
+On 4.x this is one **Authentication** screen. On 3.x you often get **Root password** and **User account** as two rows.
+
+1. **Root password** — required. You need it if sudo is broken. Do not leave root locked unless you already understand that choice.
+2. **Create a user** — same name you want to log into SDDM with. Set a user password.
+3. **Superuser / wheel / sudo** — **enable it**. `./install.sh` must be able to `sudo`. If you skip wheel, the desktop script will fail until you fix sudo.
+
+Create **one** normal user. Do not install as root-only.
+
+### Profile
+
+**Choose: Minimal.**
+
+This repo’s `./install.sh` installs Hyprland, SDDM, and the shell. Other profiles fight that:
+
+| Profile | Why not |
+| --- | --- |
+| **Minimal** | Correct — base system only |
+| Desktop → Hyprland | A second Hyprland/session stack on top of this one |
+| Desktop → GNOME / KDE / … | Extra display manager (GDM, SDDM from Plasma, etc.) |
+| Server | Extra daemons you do not want on a laptop/VM |
+| Xorg | This desktop is Wayland |
+
+If you already picked a desktop profile, Abort and start `archinstall` again, or expect to disable the extra display manager later.
+
+### Applications (audio, Bluetooth, …)
+
+4.x groups these under **Applications**. 3.x often has a dedicated **Audio** row.
+
+- **Audio: Pipewire** — required. Do not pick PulseAudio.
+- **Bluetooth** — optional here; the desktop script installs BlueZ either way.
+- **Firewall (firewalld / ufw)** — leave off unless you need one. Not required for the shell.
+- **Printers** — skip unless you have a printer to set up now.
+
+### Network configuration
+
+**Choose: NetworkManager.**
+
+Wi-Fi, Ethernet, and the shell’s network flyout all expect it. `./install.sh` enables `NetworkManager.service`.
+
+| Option | Use it? |
+| --- | --- |
+| **NetworkManager** | Yes |
+| Copy installer default / ISO network | Only as a last resort |
+| iwd alone | Skip — NM can still use iwd underneath later |
+| Manual / systemd-networkd | Skip for this desktop |
+
+### Additional packages
+
+**Leave the list empty.** Do not type `hyprland`, `firefox`, `gnome`, or a display manager here. The desktop script installs a known set from `packages/pacman.txt`. Extra names in this box are how people accidentally pull GDM or a second compositor.
+
+### Timezone
+
+Pick the city that matches you (`Europe/London`, `America/New_York`, …). This sets local time for the clock widget and timestamps.
+
+### Automatic time sync (NTP)
+
+**On.** Wrong clocks break HTTPS and pacman signatures.
+
+### Save configuration (optional)
+
+You can save a JSON copy of these answers onto a second USB. Skip it unless you reinstall often.
+
+### Install / Abort
+
+Select **Install** and confirm the disk wipe warning. Wait until it says it finished (often it offers `chroot` — **No** / skip). Then:
+
+```bash
+reboot
+```
+
+On a USB install, **unplug the Arch ISO** so firmware boots the disk. Log in on the TTY as **your user**, not `root`. Then run the clone + `./install.sh` steps in the VM or USB section below.
+
+---
+
 ## 1. Virtual machine — from the first terminal
 
 Use this when you open a VM and land in a shell. Two common cases: the VM is still the **Arch live ISO**, or Arch is **already installed**.
@@ -54,26 +261,9 @@ timedatectl set-ntp true
 archinstall
 ```
 
-In `archinstall`, use these choices (names vary slightly by version):
+Work through **[archinstall — every setting](#archinstall--every-setting)** (Minimal profile, Grub, Pipewire, NetworkManager, empty extra packages). The virtual disk you pick is **wiped**.
 
-| Screen | Choose |
-| --- | --- |
-| Archinstall language | English (or yours) |
-| Mirrors | Your country / closest |
-| Disk configuration | **Use a best-effort default partition layout** on the virtual disk (this **wipes that disk**) |
-| Disk encryption | Optional. Skip unless you want it |
-| Bootloader | **Grub** (matches the theme this repo installs). systemd-boot also works; the GRUB theme is then skipped |
-| Hostname | anything, e.g. `arch-vm` |
-| Root password | set one |
-| User account | create **your user**, set a password, and add the user to **wheel** (sudo) |
-| Profile | **Minimal** |
-| Audio | **pipewire** |
-| Kernels | **linux** |
-| Network configuration | **NetworkManager** |
-| Timezone | your timezone |
-| Additional packages | leave empty |
-
-Save and install. When it finishes:
+When `archinstall` finishes:
 
 ```bash
 reboot
@@ -194,7 +384,7 @@ timedatectl set-ntp true
 archinstall
 ```
 
-Use the **same `archinstall` table as the VM section**. The disk you pick will be **wiped**.
+Use **[archinstall — every setting](#archinstall--every-setting)** again. The disk you pick will be **wiped**.
 
 When `archinstall` finishes:
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# List / set wallpapers via swww or awww
+# List / set wallpapers via awww (Hyprland wallpaper daemon)
 set -euo pipefail
 ACTION="${1:-list}"
 FILE="${2:-}"
@@ -51,12 +51,14 @@ PY
     ;;
   set)
     [[ -z "$FILE" || ! -f "$FILE" ]] && exit 1
-    if command -v swww &>/dev/null; then
-      swww img "$FILE" >/dev/null 2>&1 || swww img "$FILE"
-    elif command -v awww &>/dev/null; then
-      awww img "$FILE"
-    else
+    if command -v awww &>/dev/null; then
+      awww img "$FILE" --transition-type fade --transition-duration 0.4 >/dev/null 2>&1 \
+        || awww img "$FILE"
+    elif command -v hyprpaper &>/dev/null; then
       hyprctl hyprpaper reload "$FILE" >/dev/null 2>&1 || true
+    else
+      echo "No wallpaper daemon (awww) on PATH" >&2
+      exit 1
     fi
     # Keep the login screen on the same image (best-effort; needs
     # /var/lib/arch-shell from install.sh).

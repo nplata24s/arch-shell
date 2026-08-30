@@ -1,2 +1,5 @@
-# AUR packages. Yay is installed automatically if missing.
-quickshell-git
+# AUR is optional. Official extra now ships `quickshell`, so a fresh
+# install does not need yay. The installer only reads this file if the
+# official quickshell package is missing.
+#
+# quickshell-git

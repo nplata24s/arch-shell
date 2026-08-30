@@ -100,7 +100,7 @@ Item {
                 }
             },
             workspaces: { count: 9, showOnBar: 5 },
-            theme: { accent: "#0078d4", fontFamily: "JetBrainsMono Nerd Font" },
+            theme: { accent: "#60cdff", fontFamily: "JetBrainsMono Nerd Font" },
             weather: { unit: "celsius" }
         }
     }
@@ -188,10 +188,6 @@ Item {
         if (!settings.taskbar || !settings.taskbar.modules)
             return []
         return settings.taskbar.modules[zone] || []
-    }
-
-    function modulesForZone(zone) {
-        return zoneModules(zone)
     }
 
     function moduleZone(id) {

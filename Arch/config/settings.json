@@ -13,7 +13,7 @@
   },
   "workspaces": { "count": 9, "showOnBar": 5 },
   "theme": {
-    "accent": "#0078d4",
+    "accent": "#60cdff",
     "fontFamily": "JetBrainsMono Nerd Font"
   },
   "weather": { "unit": "celsius" }

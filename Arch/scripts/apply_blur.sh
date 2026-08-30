@@ -17,4 +17,8 @@ hyprctl keyword 'layerrule[arch-shell-notif-blur]:match:namespace' '^(arch-shell
 hyprctl keyword 'layerrule[arch-shell-notif-blur]:blur' on >/dev/null 2>&1 || true
 hyprctl keyword 'layerrule[arch-shell-notif-blur]:ignore_alpha' 0.05 >/dev/null 2>&1 || true
 hyprctl keyword 'layerrule[arch-shell-notif-blur]:no_anim' on >/dev/null 2>&1 || true
+hyprctl keyword 'layerrule[arch-shell-osd-blur]:match:namespace' '^(arch-shell-osd)$' >/dev/null 2>&1 || true
+hyprctl keyword 'layerrule[arch-shell-osd-blur]:blur' on >/dev/null 2>&1 || true
+hyprctl keyword 'layerrule[arch-shell-osd-blur]:ignore_alpha' 0.05 >/dev/null 2>&1 || true
+hyprctl keyword 'layerrule[arch-shell-osd-blur]:no_anim' on >/dev/null 2>&1 || true
 exit 0

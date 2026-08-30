@@ -13,37 +13,40 @@ HYPR_CONFIG="${HOME}/.config/hypr/hyprland.conf"
 AUTOSTART_FILE="${HOME}/.config/hypr/config/autostart.conf"
 
 ARCH_PACKAGES=(
-  # Desktop + shell
+  # Desktop + shell (quickshell is official extra; do not use swww — it is gone)
   quickshell hyprland hypridle hyprlock hyprpicker hyprpolkitagent
-  kitty zsh fastfetch sddm imagemagick
-  ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji
-  qt6-wayland qt6-declarative qt6-svg qt6-imageformats
+  kitty sddm imagemagick
+  ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji adwaita-icon-theme
+  qt6-wayland qt6-declarative qt6-svg qt6-imageformats qt6ct
   xdg-desktop-portal xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
   xdg-user-dirs xdg-utils polkit libnotify
-  # Widgets: audio / music / EQ
   pipewire pipewire-pulse pipewire-alsa wireplumber gst-plugin-pipewire
   alsa-utils playerctl easyeffects lsp-plugins calf pamixer
-  # Widgets: network / bluetooth / power / brightness / night light
-  networkmanager bluez bluez-utils
+  networkmanager wpa_supplicant bluez bluez-utils
   upower brightnessctl wlsunset power-profiles-daemon udisks2
-  # Widgets: clipboard / wallpaper / recorder / displays / color picker
-  cliphist wl-clipboard swww wf-recorder wdisplays
-  # Widgets: calculator, files, updates, weather, bluetooth helper
-  libqalculate qalculate-gtk nemo nautilus
+  cliphist wl-clipboard awww wf-recorder wdisplays
+  libqalculate qalculate-gtk nautilus firefox
   pacman-contrib jq bc curl python python-gobject python-dbus
-  flameshot
-  # Agent Centre subscription CLIs that ship as packages
-  github-cli ollama
+  flameshot github-cli ollama unzip
 )
 
 install_packages() {
   echo "==> Checking pacman packages..."
-  local missing=()
+  local missing=() unknown=()
+  local pkg
   for pkg in "${ARCH_PACKAGES[@]}"; do
-    if ! pacman -Q "$pkg" &>/dev/null; then
-      missing+=("$pkg")
+    if pacman -Q "$pkg" &>/dev/null; then
+      continue
     fi
+    if ! pacman -Si "$pkg" &>/dev/null; then
+      unknown+=("$pkg")
+      continue
+    fi
+    missing+=("$pkg")
   done
+  if ((${#unknown[@]})); then
+    echo "Skipping packages not in the repos: ${unknown[*]}" >&2
+  fi
   if ((${#missing[@]})); then
     echo "Installing missing packages: ${missing[*]}"
     sudo pacman -S --needed --noconfirm "${missing[@]}"

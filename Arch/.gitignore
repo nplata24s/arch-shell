@@ -24,5 +24,8 @@ agent/providers.json
 agent/state.json
 agent/chat.json
 
+# Dist files used only when assembling GitHub snapshots
+packaging/
+
 # Editor
 .cursor/

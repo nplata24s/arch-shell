@@ -1,11 +1,13 @@
-# Official Arch packages required for Hyprland + Arch Shell + SDDM.
-# Installer reads this file (skips comments and blanks).
-# Intel VA-API / Vulkan packages install anywhere; unused on AMD/NVIDIA.
+# Official Arch packages for Hyprland + Arch Shell + SDDM + Agent Centre.
+# The installer skips any name that is not in the current repos.
+#
+# Wallpaper daemon is awww (extra). swww is gone from the repos.
+# quickshell is extra — no AUR compile.
 base-devel
 git
-grub
-imagemagick
-desktop-file-utils
+curl
+wget
+unzip
 hyprland
 hypridle
 hyprlock
@@ -15,12 +17,12 @@ hyprland-qt-support
 xdg-desktop-portal
 xdg-desktop-portal-hyprland
 xdg-desktop-portal-gtk
+quickshell
 qt6-wayland
 qt6-declarative
 qt6-svg
 qt6-imageformats
 qt6ct
-qt5-declarative
 sddm
 kitty
 nautilus
@@ -30,53 +32,54 @@ pipewire-pulse
 pipewire-alsa
 wireplumber
 gst-plugin-pipewire
+alsa-utils
+alsa-firmware
+alsa-ucm-conf
+sof-firmware
+playerctl
+easyeffects
+lsp-plugins
+calf
+pamixer
 networkmanager
 wpa_supplicant
 bluez
 bluez-utils
 upower
-playerctl
-cliphist
-wl-clipboard
 brightnessctl
 wlsunset
 pacman-contrib
 power-profiles-daemon
 udisks2
-qalculate-gtk
+cliphist
+wl-clipboard
+awww
 wf-recorder
 wdisplays
-easyeffects
+libqalculate
+qalculate-gtk
 flameshot
-ttf-jetbrains-mono-nerd
-adw-gtk-theme
-noto-fonts
-noto-fonts-emoji
-xdg-user-dirs
-xdg-utils
-libnotify
 jq
 bc
 python
 python-gobject
 python-dbus
-python-requests
+imagemagick
+ttf-jetbrains-mono-nerd
+noto-fonts
+noto-fonts-emoji
+adw-gtk-theme
+adwaita-icon-theme
+xdg-user-dirs
+xdg-utils
+libnotify
 polkit
 mesa
+desktop-file-utils
+github-cli
+ollama
+nodejs
+npm
+# Intel video (harmless no-ops on AMD/NVIDIA)
 vulkan-intel
 intel-media-driver
-libva-intel-driver
-sof-firmware
-alsa-firmware
-alsa-utils
-alsa-ucm-conf
-awww
-swww
-curl
-github-cli
-libqalculate
-nemo
-lsp-plugins
-calf
-pamixer
-ollama

@@ -2,7 +2,9 @@
 
 Public Windows 11-style desktop for **Arch Linux + Hyprland**: taskbar, flyouts, Agent Centre, SDDM login theme, and optional GRUB theme.
 
-Telegram, Discord, Spotify, Edge, Cursor, and similar apps are also **not** included. The installer only adds what the shell needs, plus Firefox, Kitty, and Nautilus because the keybinds open them.
+Telegram, Discord, Spotify, Edge, Cursor, and similar apps are **not** included. The installer only adds what the shell needs, plus Firefox, Kitty, and Nautilus because the keybinds open them.
+
+The private desktop (includes Finance) is **[arch-desktop](https://github.com/nplata24s/arch-desktop)**.
 
 ---
 
@@ -14,7 +16,7 @@ You need:
 - At least **20 GB** of disk (40 GB is more comfortable)
 - An internet connection during install
 - A user account that can use `sudo` (wheel group)
-- About 15–40 minutes the first time (`quickshell-git` compiles from the AUR)
+- About 5–15 minutes the first time (all packages are official; no AUR compile)
 
 **Graphics**
 
@@ -109,7 +111,7 @@ cd ~/arch-shell
 ./install.sh
 ```
 
-`quickshell-git` builds from source and can take several minutes. Enter your sudo password when asked.
+Enter your sudo password when asked. The script skips any package name that is not in the current repos instead of aborting.
 
 When the script finishes:
 
@@ -227,7 +229,25 @@ At SDDM, choose **Hyprland** and sign in.
 - Super+X closes the focused window
 - Super+Shift+H shows the keybind list
 
+Keyboard layout defaults to **gb**. Change it in `~/.config/hypr/config/settings.conf` (`kb_layout`).
+
 **Agent Centre** stores API keys in `~/.config/arch-shell/agent/providers.json` (mode 600). Nothing from that file belongs in git.
+
+The installer also puts these CLIs on PATH so **Providers → Sign in** works:
+
+| CLI | Used for |
+| --- | --- |
+| `agy` / Antigravity | Google AI Pro / Ultra |
+| `codex` | ChatGPT Plus / Pro |
+| `claude` | Claude Pro / Max |
+| `gh` | GitHub Copilot |
+| `ollama` | Local models (`ollama pull llama3.2` when you want one) |
+
+If a vendor installer is down, re-run:
+
+```bash
+~/.config/arch-shell/scripts/install-login-clis.sh
+```
 
 Wallpaper, the bottom taskbar, mica `#1a1f28`, and the module layout are already set.
 
@@ -244,13 +264,14 @@ Re-running `./install.sh` backs up an existing `~/.config/hypr` under `~/.config
 | Login theme | `/usr/share/sddm/themes/arch-shell` |
 | GRUB theme (if GRUB is present) | `/boot/grub/themes/arch-shell` |
 | Wallpaper | `~/Pictures/Wallpapers/default.jpg` |
+| Agent daemon | `systemctl --user enable arch-agentd` |
 
-Official packages: `packages/pacman.txt`. The only AUR package is `quickshell-git` (`packages/aur.txt`). Yay is bootstrapped if it is missing.
+Official packages: `packages/pacman.txt`. AUR is not required (`quickshell` is in extra).
 
 ```
 install.sh          ← run this
-packages/           pacman + AUR lists
-Arch/               taskbar, flyouts, SDDM/GRUB helpers
+packages/           official package list
+Arch/               taskbar, flyouts, SDDM/GRUB helpers, Agent Centre
 hyprland/           compositor config and session scripts
 extras/             wallpaper, Kitty, GTK, qt6ct
 ```

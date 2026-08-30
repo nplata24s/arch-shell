@@ -5,14 +5,12 @@ Arch/sddm/arch-shell/wallpaper.jpg
 Arch/sddm/arch-shell/wallpaper
 Arch/sddm/arch-shell/live-state/
 Arch/grub/arch-shell/
+Arch/packaging/
 Arch/config/providers.json
 **/providers.json
 **/agent/state.json
 **/agent/chat.json
+finance/node_modules/
+finance/ui/dist/
 __pycache__/
 *.pyc
-
-# Agent Centre credentials (never commit)
-**/providers.json
-**/agent/state.json
-**/agent/chat.json

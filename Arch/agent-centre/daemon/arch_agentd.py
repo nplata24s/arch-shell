@@ -1140,7 +1140,10 @@ def _system_prompt(agent: dict) -> str:
         "Dangerous commands (wipe /, mkfs, reboot) stay blocked even with sudo. "
         "write creates parent folders. "
         "Use {\"actions\":[]} only when the user asked a question, not when they asked you to do something. "
-        "Never claim success unless you emitted the correct action for your role in this reply."
+        "Never claim success unless you emitted the correct action for your role in this reply. "
+        "The desktop renders Markdown (bold, italic, headings, lists, links, code) and LaTeX "
+        "($inline$ and $$blocks$$, including \\frac, \\sqrt, Greek letters and super/subscripts). "
+        "Use that formatting in the prose the user reads."
     )
     return system
 
@@ -1504,7 +1507,9 @@ def _chat_system() -> str:
         "When you are only talking, end with {\"actions\":[]}. "
         "Do not claim you wrote a file or ran a command unless you emitted "
         "that action. Dangerous commands (rm -rf of /, mkfs, reboot) are blocked "
-        "even with sudo."
+        "even with sudo. "
+        "The chat panel renders Markdown (bold, italic, headings, lists, links, code) "
+        "and LaTeX ($inline$ and $$blocks$$). Use that in replies to the user."
     )
 
 

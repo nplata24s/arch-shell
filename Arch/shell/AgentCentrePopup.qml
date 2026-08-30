@@ -892,17 +892,14 @@ Item {
                                 elide: Text.ElideMiddle
                             }
 
-                            Text {
+                            FormattedText {
                                 visible: modelData.lastReply !== ""
                                 Layout.fillWidth: true
-                                text: modelData.lastReply
-                                wrapMode: Text.WordWrap
-                                maximumLineCount: 4
-                                elide: Text.ElideRight
-                                font.family: ArchTheme.fontFamily
-                                font.pixelSize: ArchTheme.sizeCaption
-                                color: modelData.status === "error"
+                                source: modelData.lastReply
+                                pixelSize: ArchTheme.sizeCaption
+                                textColor: modelData.status === "error"
                                     ? ArchTheme.danger : ArchTheme.textSecondary
+                                maximumLineCount: 10
                             }
 
                             RowLayout {
@@ -1431,6 +1428,31 @@ Item {
                         onEdited: next => root.post("/agents/update", { id: root.orgId, rules: next })
                     }
 
+                    Text {
+                        visible: !!(root.orgAgent && root.orgAgent.lastReply)
+                        text: "Last reply"
+                        font.family: ArchTheme.fontFamily
+                        font.pixelSize: ArchTheme.sizeCaption
+                        color: ArchTheme.textTertiary
+                    }
+                    Flickable {
+                        visible: !!(root.orgAgent && root.orgAgent.lastReply)
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 180
+                        Layout.fillHeight: true
+                        clip: true
+                        contentWidth: width
+                        contentHeight: orgReply.implicitHeight
+                        ScrollBar.vertical: FScroll { }
+                        FormattedText {
+                            id: orgReply
+                            width: parent.width
+                            source: root.orgAgent ? (root.orgAgent.lastReply || "") : ""
+                            pixelSize: ArchTheme.sizeSmall
+                            textColor: ArchTheme.textPrimary
+                        }
+                    }
+
                     RowLayout {
                         Layout.fillWidth: true
                         FField {
@@ -1839,13 +1861,11 @@ Item {
                                     font.pixelSize: ArchTheme.sizeCaption
                                     color: modelData.role === "user" ? ArchTheme.accent : ArchTheme.textTertiary
                                 }
-                                Text {
+                                FormattedText {
                                     Layout.fillWidth: true
-                                    text: modelData.content || ""
-                                    wrapMode: Text.Wrap
-                                    font.family: ArchTheme.fontFamily
-                                    font.pixelSize: ArchTheme.sizeSmall
-                                    color: ArchTheme.textPrimary
+                                    source: modelData.content || ""
+                                    pixelSize: ArchTheme.sizeSmall
+                                    textColor: ArchTheme.textPrimary
                                 }
                             }
                         }

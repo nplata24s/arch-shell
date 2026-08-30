@@ -169,6 +169,7 @@ Item {
         t = t.replace(/^###\s+(.+)$/gm, "<font size=\"+1\"><b>$1</b></font>")
         t = t.replace(/^##\s+(.+)$/gm, "<font size=\"+1\"><b>$1</b></font>")
         t = t.replace(/^#\s+(.+)$/gm, "<font size=\"+2\"><b>$1</b></font>")
+        t = t.replace(/^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$/gm, hrHtml())
         t = t.replace(/^&gt;\s+(.+)$/gm, "<i>$1</i>")
         t = t.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
                       "<a href=\"$2\">$1</a>")
@@ -184,6 +185,19 @@ Item {
         t = t.replace(/\n\n+/g, "<br/><br/>")
         t = t.replace(/\n/g, "<br/>")
         return t
+    }
+
+    function hrHtml() {
+        const c = root.mutedColor
+        const hex = "#"
+            + toHex(c.r) + toHex(c.g) + toHex(c.b)
+        return "<br/><hr width=\"100%\" size=\"4\" noshade color=\"" + hex + "\"/><br/>"
+    }
+
+    function toHex(n) {
+        const v = Math.max(0, Math.min(255, Math.round(Number(n) * 255)))
+        const s = v.toString(16)
+        return s.length === 1 ? "0" + s : s
     }
 
     function mathHtml(src, display) {

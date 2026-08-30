@@ -178,6 +178,47 @@ copy_hypr() {
 
   local wall="${HOME}/.config/arch-shell/wallpaper"
   sed "s|WALLPAPER_PATH|${wall}|" "${ROOT}/hyprland/hyprlock.conf" > "${HYPR_DIR}/hyprlock.conf"
+  apply_vm_hypr
+}
+
+apply_vm_hypr() {
+  local virt=""
+  if command -v systemd-detect-virt >/dev/null 2>&1; then
+    virt="$(systemd-detect-virt 2>/dev/null || true)"
+  fi
+  case "$virt" in
+    none|"") return 0 ;;
+  esac
+  log "VM detected ($virt) — applying Hyprland + boot workarounds..."
+  cat > "${HYPR_DIR}/config/vm.conf" <<'EOF'
+# Auto-filled because systemd-detect-virt reported a VM.
+# VirtualBox: VMSVGA, 128 MB video, 4 GB RAM, 3D acceleration OFF, nomodeset.
+env = AQ_NO_MODIFIERS,1
+env = WLR_NO_HARDWARE_CURSORS,1
+env = LIBGL_ALWAYS_SOFTWARE,1
+env = GALLIUM_DRIVER,llvmpipe
+
+cursor {
+    no_hardware_cursors = true
+}
+EOF
+  if [[ "$virt" == "oracle" ]] && pacman -Si virtualbox-guest-utils >/dev/null 2>&1; then
+    sudo pacman -S --needed --noconfirm virtualbox-guest-utils || \
+      warn "could not install virtualbox-guest-utils"
+    sudo systemctl enable vboxservice.service 2>/dev/null || true
+  fi
+}
+
+apply_vm_boot() {
+  local helper="${ARCH_ROOT}/scripts/apply-vm-boot.py"
+  [[ -f "$helper" ]] || return 0
+  command -v systemd-detect-virt >/dev/null 2>&1 || return 0
+  local virt
+  virt="$(systemd-detect-virt 2>/dev/null || true)"
+  # nomodeset is the VirtualBox ramdisk hang workaround. Other hypervisors skip it.
+  [[ "$virt" == "oracle" ]] || return 0
+  log "VirtualBox detected — adding nomodeset so GRUB gets past the ramdisk..."
+  sudo python3 "$helper" || warn "could not persist nomodeset; add it in GRUB (e on the linux line)"
 }
 
 copy_extras() {
@@ -305,6 +346,7 @@ main() {
   copy_extras
   install_sddm
   install_grub
+  apply_vm_boot
   install_finance
   install_login_clis
   enable_services

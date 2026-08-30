@@ -13,6 +13,7 @@ The private desktop (includes Finance) is **[arch-desktop](https://github.com/np
 You need:
 
 - A 64-bit PC or VM (x86_64)
+- **VirtualBox:** at least **4 GB RAM** and **128 MB video memory** (see below)
 - At least **20 GB** of disk (40 GB is more comfortable)
 - An internet connection during install
 - A user account that can use `sudo` (wheel group)
@@ -30,6 +31,44 @@ The package list includes Intel video packages (`vulkan-intel`, `intel-media-dri
 
 - API keys and Agent Centre provider keys (`~/.config/arch-shell/agent/providers.json` is created on the machine)
 - Any Finance / spreadsheet / Telegram code
+
+---
+
+## Testing in VirtualBox
+
+Create the VM **before** `archinstall` with enough memory. Too little RAM, 3D acceleration, or a tiny video window will hang at `Loading Linux linux` / `Loading initial ramdisk`.
+
+**Settings → System**
+
+- Base memory: **4096 MB** or more (2 GB is not enough)
+
+**Settings → Display**
+
+- Graphics Controller: **VMSVGA** (not VBoxVGA / VBoxSVGA)
+- Video Memory: **128 MB**
+- **3D Acceleration: Off** — leaving this on often freezes at the ramdisk line
+
+`./install.sh` detects VirtualBox/QEMU and:
+
+- adds **`nomodeset`** to GRUB (and systemd-boot if that is what you used) so the hang does not come back after reboot
+- writes `~/.config/hypr/config/vm.conf` with software rendering so Hyprland can start without a real GPU
+
+If this VM was installed **before** that installer change, persist `nomodeset` once from a guest TTY (**Right Ctrl+F2**):
+
+```bash
+sudo python3 ~/.config/arch-shell/scripts/apply-vm-boot.py
+```
+
+If that file is not there yet:
+
+```bash
+sudo sed -i '/^GRUB_CMDLINE_LINUX_DEFAULT=/ { /nomodeset/! s/"$/ nomodeset"/ }' /etc/default/grub
+sudo grub-mkconfig -o /boot/grub/grub.cfg
+```
+
+The one-time GRUB `e` edit (add `nomodeset` at the end of the `linux /vmlinuz-linux …` line, then Ctrl+X) is only for the current boot.
+
+Do **not** use Ctrl+Alt+F2 from a Linux host if you meant a guest TTY — that switches the **host**. VirtualBox host key is **Right Ctrl**. Guest TTY: **Right Ctrl+F2**, or **Input → Keyboard → Insert Ctrl-Alt-F2**.
 
 ---
 
@@ -242,7 +281,9 @@ On a USB install, **unplug the Arch ISO** so firmware boots the disk. Log in on 
 
 ## 1. Virtual machine — from the first terminal
 
-Use this when you open a VM and land in a shell. Two common cases: the VM is still the **Arch live ISO**, or Arch is **already installed**.
+Power the VM off first and set **4 GB RAM**, **VMSVGA**, **128 MB** video, and **3D Acceleration Off** ([Testing in VirtualBox](#testing-in-virtualbox)). Then open the VM.
+
+Use this when you land in a shell. Two common cases: the VM is still the **Arch live ISO**, or Arch is **already installed**.
 
 ### If the VM window is the Arch live ISO (`root@archiso`)
 
